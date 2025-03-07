@@ -1,1 +1,6 @@
-pydub==0.25.1
+# 依赖包列表
+SpeechRecognition>=3.8.1
+pydub>=0.25.1
+requests>=2.27.1
+typing>=3.7.4.3
+# 根据需要添加其他依赖
