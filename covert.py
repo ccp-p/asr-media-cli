@@ -7,6 +7,8 @@ import concurrent.futures
 from pathlib import Path
 import logging
 import requests
+import sys
+import signal
 from pydub import AudioSegment
 
 # 导入ASR模块
@@ -191,9 +193,29 @@ def convert_mp3_to_txt(mp3_folder, output_folder, max_retries=3, max_workers=4,
     
     # 创建临时目录用于存储分割的音频片段
     temp_dir = tempfile.mkdtemp()
+    # 确保segments目录存在
+    temp_segments_dir = os.path.join(temp_dir, "segments")
+    os.makedirs(temp_segments_dir, exist_ok=True)
+    
+    # 定义中断处理函数
+    interrupt_received = False
+    original_sigint_handler = signal.getsignal(signal.SIGINT)
+    
+    def handle_interrupt(sig, frame):
+        nonlocal interrupt_received
+        print("\n\n⚠️ 接收到中断信号，正在安全终止程序...\n稍等片刻，正在保存已处理的数据...\n")
+        interrupt_received = True
+        # 不立即退出，允许程序完成当前处理和清理
+    
+    # 设置中断处理
+    signal.signal(signal.SIGINT, handle_interrupt)
     
     try:
         for filename in os.listdir(mp3_folder):
+            if interrupt_received:
+                print("程序被用户中断，停止处理新文件。")
+                break
+                
             if filename.endswith(".mp3"):
                 input_path = os.path.join(mp3_folder, filename)
                 
@@ -208,8 +230,6 @@ def convert_mp3_to_txt(mp3_folder, output_folder, max_retries=3, max_workers=4,
                     continue
                 
                 try:
-                    temp_segments_dir = os.path.join(temp_dir, "segments")
-                    
                     # 分割音频为较小片段
                     print(f"正在分割 {filename} 为小片段...")
                     split_audio(
@@ -243,30 +263,47 @@ def convert_mp3_to_txt(mp3_folder, output_folder, max_retries=3, max_workers=4,
                             for i, segment_file in enumerate(segment_files)
                         }
                         
-                        # 收集结果
-                        for future in concurrent.futures.as_completed(future_to_segment):
-                            i, segment_file = future_to_segment[future]
-                            try:
-                                text = future.result()
-                                if text:
-                                    segment_results[i] = text
-                                    print(f"  ├─ 成功识别: {segment_file}")
-                                else:
-                                    print(f"  ├─ 识别失败: {segment_file}")
-                            except Exception as exc:
-                                print(f"  ├─ 识别出错: {segment_file} - {str(exc)}")
+                        # 收集结果，并添加中断检查
+                        try:
+                            for future in concurrent.futures.as_completed(future_to_segment):
+                                if interrupt_received:
+                                    print("检测到中断，正在取消剩余任务...")
+                                    executor.shutdown(wait=False, cancel_futures=True)
+                                    break
+                                    
+                                i, segment_file = future_to_segment[future]
+                                try:
+                                    text = future.result(timeout=60)  # 添加超时以避免无限等待
+                                    if text:
+                                        segment_results[i] = text
+                                        print(f"  ├─ 成功识别: {segment_file}")
+                                    else:
+                                        print(f"  ├─ 识别失败: {segment_file}")
+                                except concurrent.futures.TimeoutError:
+                                    print(f"  ├─ 识别超时: {segment_file}")
+                                except Exception as exc:
+                                    print(f"  ├─ 识别出错: {segment_file} - {str(exc)}")
+                        except KeyboardInterrupt:
+                            print("检测到用户中断，正在取消剩余任务...")
+                            executor.shutdown(wait=False, cancel_futures=True)
+                            interrupt_received = True
+                    
+                    # 如果处理被中断，保存当前结果并退出
+                    if interrupt_received:
+                        print("处理被中断，尝试保存已完成的识别结果...")
+                        # 继续执行以下代码，保存已处理的结果
                     
                     # 统计识别结果
                     success_count = len(segment_results)
                     fail_count = len(segment_files) - success_count
                     
-                    # 集中重试失败的片段
-                    if fail_count > 0:
+                    # 如果没有中断并且有失败的片段，则进行重试
+                    if not interrupt_received and fail_count > 0:
                         print(f"\n开始重试 {fail_count} 个失败的片段...")
                         failed_segments = [(i, segment_files[i]) for i in range(len(segment_files)) if i not in segment_results]
                         
                         for retry_round in range(1, max_retries + 1):
-                            if not failed_segments:
+                            if not failed_segments or interrupt_received:
                                 break
                                 
                             print(f"第 {retry_round} 轮重试 ({len(failed_segments)} 个片段):")
@@ -286,19 +323,32 @@ def convert_mp3_to_txt(mp3_folder, output_folder, max_retries=3, max_workers=4,
                                     for idx, segment_file in failed_segments
                                 }
                                 
-                                for future in concurrent.futures.as_completed(future_to_failed):
-                                    idx, segment_file = future_to_failed[future]
-                                    try:
-                                        text = future.result()
-                                        if text:
-                                            segment_results[idx] = text
-                                            print(f"  ├─ 重试成功: {segment_file}")
-                                        else:
+                                try:
+                                    for future in concurrent.futures.as_completed(future_to_failed):
+                                        if interrupt_received:
+                                            print("检测到中断，正在取消剩余重试任务...")
+                                            retry_executor.shutdown(wait=False, cancel_futures=True)
+                                            break
+                                            
+                                        idx, segment_file = future_to_failed[future]
+                                        try:
+                                            text = future.result(timeout=60)
+                                            if text:
+                                                segment_results[idx] = text
+                                                print(f"  ├─ 重试成功: {segment_file}")
+                                            else:
+                                                still_failed.append((idx, segment_file))
+                                                print(f"  ├─ 重试失败: {segment_file}")
+                                        except concurrent.futures.TimeoutError:
                                             still_failed.append((idx, segment_file))
-                                            print(f"  ├─ 重试失败: {segment_file}")
-                                    except Exception as exc:
-                                        still_failed.append((idx, segment_file))
-                                        print(f"  ├─ 重试出错: {segment_file} - {str(exc)}")
+                                            print(f"  ├─ 重试超时: {segment_file}")
+                                        except Exception as exc:
+                                            still_failed.append((idx, segment_file))
+                                            print(f"  ├─ 重试出错: {segment_file} - {str(exc)}")
+                                except KeyboardInterrupt:
+                                    print("检测到用户中断，正在取消剩余重试任务...")
+                                    retry_executor.shutdown(wait=False, cancel_futures=True)
+                                    interrupt_received = True
                             
                             failed_segments = still_failed
                     
@@ -337,7 +387,9 @@ def convert_mp3_to_txt(mp3_folder, output_folder, max_retries=3, max_workers=4,
                     
                     success_count = len(segment_results)
                     fail_count = len(segment_files) - success_count
-                    print(f"✅ {filename} 转换完成: 成功识别 {success_count}/{len(segment_files)} 片段" + 
+                    
+                    status = "（部分完成 - 已中断）" if interrupt_received else ""
+                    print(f"✅ {filename} 转换完成{status}: 成功识别 {success_count}/{len(segment_files)} 片段" + 
                           (f", 失败 {fail_count} 片段" if fail_count > 0 else ""))
                     
                     # 重命名原文件，添加"_recognized"标识
@@ -345,20 +397,33 @@ def convert_mp3_to_txt(mp3_folder, output_folder, max_retries=3, max_workers=4,
                     dir_name = os.path.dirname(input_path)
                     name, ext = os.path.splitext(base_name)
                     new_path = os.path.join(dir_name, f"{name}_recognized{ext}")
-                    os.rename(input_path, new_path)
+                    try:
+                        os.rename(input_path, new_path)
+                    except Exception as e:
+                        print(f"⚠️ 无法重命名文件: {str(e)}")
+                        new_path = input_path  # 如果重命名失败，保留原路径
                     
                     # 更新已处理记录
                     processed_files[input_path] = {
-                        "processed_time": time.strftime("%Y-%m-%-%d %H:%M:%S"),
+                        "processed_time": time.strftime("%Y-%m-%d %H:%M:%S"),
                         "new_path": new_path,
-                        "output_file": output_file
+                        "output_file": output_file,
+                        "interrupted": interrupt_received,
+                        "success_rate": f"{success_count}/{len(segment_files)}"
                     }
                     save_processed_records(processed_record_file, processed_files)
                     
-                    print(f"✅ 已重命名文件为: {os.path.basename(new_path)}")
+                    if new_path != input_path:
+                        print(f"✅ 已重命名文件为: {os.path.basename(new_path)}")
                     
+                    if interrupt_received:
+                        print("用户中断处理，退出处理循环")
+                        break
+                        
                 except Exception as e:
                     print(f"❌ {filename} 失败: {str(e)}")
+                    if interrupt_received:
+                        break
         
         # 所有识别完成后，显示服务使用统计
         stats = asr_selector.get_service_stats()
@@ -367,19 +432,39 @@ def convert_mp3_to_txt(mp3_folder, output_folder, max_retries=3, max_workers=4,
             print(f"  {name}: 使用次数 {stat['count']}, 成功率 {stat['success_rate']}, 可用状态: {'可用' if stat['available'] else '禁用'}")
                     
     finally:
+        # 恢复原始信号处理程序
+        signal.signal(signal.SIGINT, original_sigint_handler)
+        
         # 清理临时文件
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        try:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            print(f"✓ 临时文件已清理: {temp_dir}")
+        except Exception as e:
+            print(f"⚠️ 清理临时文件失败: {str(e)}")
+        
+        if interrupt_received:
+            print("\n程序已安全终止，已保存处理进度。您可以稍后继续处理剩余文件。")
 
 if __name__ == "__main__":
-    # 修改这几个路径即可
-    convert_mp3_to_txt(
-        mp3_folder = r"D:\download",  # 如：r"C:\Users\用户名\Music"
-        output_folder = r"D:\download\dest",  # 如：r"D:\output"
-        max_retries = 3,  # 集中重试的最大次数
-        max_workers = 4,   # 线程池中的线程数，可根据CPU配置调整
-        use_jianying_first = True,  # 设置为True表示优先使用剪映API进行识别
-        use_kuaishou = True,   # 设置为True表示使用快手API进行识别
-        use_bcut = True,  # 设置为True表示优先使用B站ASR进行识别（优先级最高）
-        format_text = True,  # 格式化输出文本，提高可读性
-        include_timestamps = True  # 在格式化文本中包含时间戳
-    )
+    # 添加异常处理
+    try:
+        # 修改这几个路径即可
+        convert_mp3_to_txt(
+            mp3_folder = r"D:\download",  # 如：r"C:\Users\用户名\Music"
+            output_folder = r"D:\download\dest",  # 如：r"D:\output"
+            max_retries = 3,  # 集中重试的最大次数
+            max_workers = 4,   # 线程池中的线程数，可根据CPU配置调整
+            use_jianying_first = True,  # 设置为True表示优先使用剪映API进行识别
+            use_kuaishou = True,   # 设置为True表示使用快手API进行识别
+            use_bcut = True,  # 设置为True表示优先使用B站ASR进行识别（优先级最高）
+            format_text = True,  # 格式化输出文本，提高可读性
+            include_timestamps = True  # 在格式化文本中包含时间戳
+        )
+    except KeyboardInterrupt:
+        print("\n程序已被用户中断")
+    except Exception as e:
+        print(f"\n程序执行出错: {str(e)}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        print("\n程序执行完毕。")
