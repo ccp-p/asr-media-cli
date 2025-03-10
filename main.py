@@ -9,7 +9,7 @@ from utils import setup_logging
 from audio_processor import AudioProcessor
 
 # 配置日志
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # 设置代理(如需要)
 os.environ["HTTP_PROXY"] = "http://127.0.0.1:7890"
@@ -61,7 +61,8 @@ if __name__ == "__main__":
             use_kuaishou = True,   # 设置为True表示使用快手API进行识别
             use_bcut = True,  # 设置为True表示优先使用B站ASR进行识别（优先级最高）
             format_text = True,  # 格式化输出文本，提高可读性
-            include_timestamps = True  # 在格式化文本中包含时间戳
+            include_timestamps = True,  # 在格式化文本中包含时间戳
+            
         )
     except KeyboardInterrupt:
         logging.warning("\n程序已被用户中断")
