@@ -2,7 +2,6 @@ import os
 import tempfile
 import shutil
 import time
-import json
 import concurrent.futures
 import logging
 import requests
@@ -10,6 +9,9 @@ import signal
 from typing import Dict, List, Set, Tuple, Optional, Any, Callable
 from pathlib import Path
 from pydub import AudioSegment
+
+# 导入工具函数
+from utils import format_time_duration, load_json_file, save_json_file
 
 # 导入ASR模块
 from asr import GoogleASR, JianYingASR, KuaiShouASR, BcutASR, ASRDataSeg, ASRServiceSelector
@@ -62,7 +64,7 @@ class AudioProcessor:
         
         # 记录文件路径
         self.processed_record_file = os.path.join(self.output_folder, "processed_audio_files.json")
-        self.processed_files = self._load_processed_records()
+        self.processed_files = load_json_file(self.processed_record_file)
         
         # 初始化中断信号处理
         self.interrupt_received = False
@@ -76,20 +78,9 @@ class AudioProcessor:
         # 初始化ASR服务
         self._register_asr_services()
     
-    def _load_processed_records(self) -> Dict[str, Any]:
-        """加载已处理文件记录"""
-        if os.path.exists(self.processed_record_file):
-            try:
-                with open(self.processed_record_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except json.JSONDecodeError:
-                logging.warning(f"读取记录文件 {self.processed_record_file} 出错。创建新记录。")
-        return {}
-    
     def _save_processed_records(self):
         """保存已处理文件记录"""
-        with open(self.processed_record_file, 'w', encoding='utf-8') as f:
-            json.dump(self.processed_files, f, indent=4, ensure_ascii=False)
+        save_json_file(self.processed_record_file, self.processed_files)
     
     def _register_asr_services(self):
         """注册ASR服务到服务选择器"""
@@ -548,22 +539,6 @@ class AudioProcessor:
         
         if self.interrupt_received:
             logging.info("\n程序已安全终止，已保存处理进度。您可以稍后继续处理剩余文件。")
-
-
-def format_time_duration(seconds: float) -> str:
-    """
-    将秒数格式化为更易读的时间格式 (HH:MM:SS)
-    
-    Args:
-        seconds: 秒数
-        
-    Returns:
-        格式化的时间字符串 (HH:MM:SS)
-    """
-    hours, remainder = divmod(seconds, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    return f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}"
-
 
 def convert_mp3_to_txt(mp3_folder: str, output_folder: str, max_retries: int = 3, 
                      max_workers: int = 4, use_jianying_first: bool = False, 
