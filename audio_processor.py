@@ -13,12 +13,10 @@ from pydub import AudioSegment
 # 导入工具函数
 from utils import format_time_duration, load_json_file, save_json_file
 
-# 导入ASR模块
-from asr import GoogleASR, JianYingASR, KuaiShouASR, BcutASR, ASRDataSeg, ASRServiceSelector
+# 导入ASR模块和ASR管理器
+from asr import ASRDataSeg
+from asr_manager import ASRManager
 from text_formatter import TextFormatter
-
-# 创建全局的ASR服务选择器
-asr_selector = ASRServiceSelector()
 
 class AudioProcessor:
     """音频处理类，负责音频分割、转写和文本整合"""
@@ -68,32 +66,16 @@ class AudioProcessor:
         self.temp_segments_dir = os.path.join(self.temp_dir, "segments")
         os.makedirs(self.temp_segments_dir, exist_ok=True)
         
-        # 初始化ASR服务
-        self._register_asr_services()
+        # 初始化ASR服务管理器
+        self.asr_manager = ASRManager(
+            use_jianying_first=use_jianying_first,
+            use_kuaishou=use_kuaishou,
+            use_bcut=use_bcut
+        )
     
     def _save_processed_records(self):
         """保存已处理文件记录"""
         save_json_file(self.processed_record_file, self.processed_files)
-    
-    def _register_asr_services(self):
-        """注册ASR服务到服务选择器"""
-        # 根据用户配置设置权重
-        google_weight = 5 if (self.use_jianying_first or self.use_kuaishou or self.use_bcut) else 20
-        jianying_weight = 20 if self.use_jianying_first else 10
-        kuaishou_weight = 25 if self.use_kuaishou else 0  # 0表示不使用
-        bcut_weight = 30 if self.use_bcut else 0  # 0表示不使用
-        
-        # 注册服务
-        asr_selector.register_service("Google", GoogleASR, weight=google_weight)
-        asr_selector.register_service("剪映", JianYingASR, weight=jianying_weight)
-        
-        if self.use_kuaishou:
-            asr_selector.register_service("快手", KuaiShouASR, weight=kuaishou_weight)
-        
-        if self.use_bcut:
-            asr_selector.register_service("B站", BcutASR, weight=bcut_weight)
-        
-        logging.info("ASR服务注册完成")
     
     def handle_interrupt(self, sig, frame):
         """处理中断信号"""
@@ -156,54 +138,8 @@ class AudioProcessor:
         Returns:
             识别结果文本，失败返回None
         """
-        # 最多尝试的服务数量
-        max_attempts = 3
-        attempts = 0
-        
-        # 已尝试的服务，避免重复使用
-        tried_services: Set[str] = set()
-        
-        while attempts < max_attempts:
-            # 选择一个ASR服务
-            service_result = asr_selector.select_service()
-            if not service_result:
-                logging.warning("没有可用的ASR服务")
-                break
-                
-            name, service_class = service_result
-            
-            # 如果已经尝试过该服务，且还有其他服务可用，则继续选择
-            if name in tried_services and attempts < max_attempts - 1:
-                attempts += 1
-                continue
-                
-            tried_services.add(name)
-            
-            logging.info(f"尝试使用 {name} ASR识别: {os.path.basename(audio_path)}")
-            try:
-                # 创建ASR实例并识别
-                asr = service_class(audio_path)
-                segments = asr.get_result(callback=lambda p, m: logging.info(f"{name}识别进度: {p}% - {m}"))
-                
-                if segments:
-                    result_text = " ".join([seg.text for seg in segments if seg.text])
-                    if result_text:
-                        logging.info(f"{name} ASR识别成功: {os.path.basename(audio_path)}")
-                        asr_selector.report_result(name, True)  # 报告成功
-                        return result_text
-                
-                logging.warning(f"{name} ASR未能识别文本")
-                asr_selector.report_result(name, False)  # 报告失败
-                
-            except Exception as e:
-                logging.error(f"{name} ASR识别出错: {str(e)}")
-                asr_selector.report_result(name, False)  # 报告失败
-            
-            attempts += 1
-        
-        # 所有服务都失败了
-        logging.error(f"所有ASR服务均未能识别: {os.path.basename(audio_path)}")
-        return None
+        # 使用ASR管理器进行识别
+        return self.asr_manager.recognize_audio(audio_path)
     
     def process_audio_segments(self, segment_files: List[str]) -> Dict[int, str]:
         """
@@ -507,7 +443,7 @@ class AudioProcessor:
         formatted_total_duration = format_time_duration(total_duration)
         
         # 显示ASR服务统计
-        stats = asr_selector.get_service_stats()
+        stats = self.asr_manager.get_service_stats()
         logging.info("\nASR服务使用统计:")
         for name, stat in stats.items():
             logging.info(f"  {name}: 使用次数 {stat['count']}, 成功率 {stat['success_rate']}, " +
