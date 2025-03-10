@@ -375,11 +375,12 @@ def convert_mp3_to_txt(mp3_folder, output_folder, max_retries=3, max_workers=4,
                         full_text = TextFormatter.format_segment_text(
                             all_text, 
                             timestamps=all_timestamps if include_timestamps else None,
-                            include_timestamps=include_timestamps
+                            include_timestamps=include_timestamps,
+                            separate_segments=True  # 启用分片分隔
                         )
                     else:
                         # 如果不格式化，仍使用原来的合并方式
-                        full_text = " ".join(all_text)
+                        full_text = "\n\n".join([text for text in all_text if text and text != "[无法识别的音频片段]"])
                     
                     output_file = os.path.join(output_folder, filename.replace(".mp3", ".txt"))
                     with open(output_file, 'w', encoding='utf-8') as f:
