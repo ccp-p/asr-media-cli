@@ -76,8 +76,85 @@ class AudioProcessor:
         )
         
         # 进度条相关
-        self.overall_progress_bar = None
-        self.file_progress_bar = None
+        self.progress_bars: Dict[str, ProgressBar] = {}
+    
+    # 新增: 通用进度条管理方法
+    def create_progress_bar(self, name: str, total: int, prefix: str, suffix: str = "") -> Optional[ProgressBar]:
+        """
+        创建并存储一个进度条
+        
+        Args:
+            name: 进度条名称，用于后续引用
+            total: 总步数
+            prefix: 进度条前缀
+            suffix: 进度条后缀
+            
+        Returns:
+            创建的进度条，如果show_progress为False则返回None
+        """
+        if not self.show_progress:
+            return None
+            
+        progress_bar = ProgressBar(total=total, prefix=prefix, suffix=suffix)
+        self.progress_bars[name] = progress_bar
+        return progress_bar
+    
+    def update_progress(self, name: str, current: Optional[int] = None, suffix: Optional[str] = None) -> None:
+        """
+        更新指定进度条
+        
+        Args:
+            name: 进度条名称
+            current: 当前进度
+            suffix: 新的后缀文本
+        """
+        if not self.show_progress or name not in self.progress_bars:
+            return
+            
+        self.progress_bars[name].update(current, suffix)
+    
+    def finish_progress(self, name: str, suffix: Optional[str] = None) -> None:
+        """
+        完成指定进度条
+        
+        Args:
+            name: 进度条名称
+            suffix: 完成时的后缀文本
+        """
+        if not self.show_progress or name not in self.progress_bars:
+            return
+            
+        self.progress_bars[name].finish(suffix)
+        del self.progress_bars[name]
+    
+    # 新增: 安全执行函数的包装器
+    def safe_execute(self, func: Callable, error_msg: str = "执行出错", progress_name: Optional[str] = None, 
+                  error_suffix: Optional[str] = None, *args, **kwargs) -> Any:
+        """
+        安全执行函数，处理异常并更新进度条
+        
+        Args:
+            func: 要执行的函数
+            error_msg: 出错时的日志消息
+            progress_name: 相关进度条名称
+            error_suffix: 出错时的进度条后缀，默认使用错误消息
+            args, kwargs: 传递给func的参数
+            
+        Returns:
+            函数执行结果，出错时返回None
+        """
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            if error_suffix is None:
+                error_suffix = f"失败 - {str(e)}"
+                
+            logging.error(f"{error_msg}: {str(e)}")
+            
+            if progress_name and self.show_progress and progress_name in self.progress_bars:
+                self.finish_progress(progress_name, error_suffix)
+                
+            return None
     
     def _save_processed_records(self):
         """保存已处理文件记录"""
@@ -103,7 +180,10 @@ class AudioProcessor:
         filename = os.path.basename(input_path)
         logging.info(f"正在分割 {filename} 为小片段...")
         
-        try:
+        # 创建进度条，但先不更新
+        progress_name = f"split_{filename}"
+        
+        def do_split():
             audio = AudioSegment.from_mp3(input_path)
             
             # 计算总时长（毫秒转秒）
@@ -114,13 +194,12 @@ class AudioProcessor:
             expected_segments = (total_duration + segment_length - 1) // segment_length
             
             # 创建分割进度条
-            split_progress = None
-            if self.show_progress:
-                split_progress = ProgressBar(
-                    total=expected_segments, 
-                    prefix=f"分割 {filename}", 
-                    suffix="准备中"
-                )
+            self.create_progress_bar(
+                progress_name,
+                total=expected_segments, 
+                prefix=f"分割 {filename}", 
+                suffix="准备中"
+            )
             
             segment_files = []
             
@@ -134,8 +213,11 @@ class AudioProcessor:
                 output_path = os.path.join(self.temp_segments_dir, output_filename)
                 
                 # 更新进度条
-                if split_progress:
-                    split_progress.update(i, f"导出片段 {i+1}/{expected_segments}")
+                self.update_progress(
+                    progress_name, 
+                    i, 
+                    f"导出片段 {i+1}/{expected_segments}"
+                )
                 
                 segment.export(
                     output_path,
@@ -146,18 +228,18 @@ class AudioProcessor:
                 logging.debug(f"  ├─ 分割完成: {output_filename}")
             
             # 完成进度条
-            if split_progress:
-                split_progress.finish(f"完成 - {len(segment_files)} 个片段")
+            self.finish_progress(progress_name, f"完成 - {len(segment_files)} 个片段")
             
             return segment_files
-            
-        except Exception as e:
-            # 确保进度条完成
-            if 'split_progress' in locals() and split_progress:
-                split_progress.finish(f"失败 - {str(e)}")
-                
-            logging.error(f"分割音频文件 {filename} 失败: {str(e)}")
-            return []
+        
+        # 使用安全执行器处理错误
+        result = self.safe_execute(
+            do_split, 
+            error_msg=f"分割音频文件 {filename} 失败",
+            progress_name=progress_name
+        )
+        
+        return result or []
     
     def recognize_audio(self, audio_path: str) -> Optional[str]:
         """
@@ -473,52 +555,44 @@ class AudioProcessor:
             处理是否成功
         """
         filename = os.path.basename(input_path)
+        file_progress = None
         
         try:
             # 创建单个文件总进度条
-            if self.show_progress:
-                file_progress = ProgressBar(
-                    total=4,  # 分割、识别、重试、保存 4个阶段
-                    prefix=f"处理 {filename}",
-                    suffix="准备中"
-                )
+            file_progress = self.create_progress_bar(
+                "file_progress",
+                total=4,  # 分割、识别、重试、保存 4个阶段
+                prefix=f"处理 {filename}",
+                suffix="准备中"
+            )
             
             # 记录单个文件处理开始时间
             file_start_time = time.time()
             
             # 分割音频为较小片段
-            if self.show_progress:
-                file_progress.update(0, "分割音频")
-            
+            self.update_progress("file_progress", 0, "分割音频")
             segment_files = self.split_audio_file(input_path)
+            
             if not segment_files:
                 logging.error(f"分割 {filename} 失败，跳过此文件")
-                if self.show_progress:
-                    file_progress.finish("分割失败，跳过")
+                self.finish_progress("file_progress", "分割失败，跳过")
                 return False
             
             # 处理音频片段
-            if self.show_progress:
-                file_progress.update(1, "识别音频")
-            
+            self.update_progress("file_progress", 1, "识别音频")
             segment_results = self.process_audio_segments(segment_files)
             
             # 如果处理被中断，保存当前结果并退出
             if self.interrupt_received:
                 logging.warning("处理被中断，尝试保存已完成的识别结果...")
-                if self.show_progress:
-                    file_progress.update(2, "处理被中断")
+                self.update_progress("file_progress", 2, "处理被中断")
             else:
                 # 重试失败的片段
-                if self.show_progress:
-                    file_progress.update(2, "重试失败片段")
-                
+                self.update_progress("file_progress", 2, "重试失败片段")
                 segment_results = self.retry_failed_segments(segment_files, segment_results)
             
             # 准备结果文本
-            if self.show_progress:
-                file_progress.update(3, "生成文本")
-            
+            self.update_progress("file_progress", 3, "生成文本")
             full_text = self.prepare_result_text(segment_files, segment_results)
             
             # 保存结果到文件
@@ -547,9 +621,8 @@ class AudioProcessor:
             self._save_processed_records()
             
             # 完成文件处理进度条
-            if self.show_progress:
-                success_rate = f"{success_count}/{len(segment_files)}"
-                file_progress.finish(f"完成 - 成功率: {success_rate}, 耗时: {formatted_duration}")
+            success_rate = f"{success_count}/{len(segment_files)}"
+            self.finish_progress("file_progress", f"完成 - 成功率: {success_rate}, 耗时: {formatted_duration}")
             
             logging.info(f"✅ {filename} 转换完成{status}: 成功识别 {success_count}/{len(segment_files)} 片段" + 
                       (f", 失败 {fail_count} 片段" if fail_count > 0 else "") + 
@@ -560,8 +633,8 @@ class AudioProcessor:
         except Exception as e:
             logging.error(f"❌ {filename} 处理失败: {str(e)}")
             # 确保进度条完成
-            if self.show_progress and 'file_progress' in locals():
-                file_progress.finish(f"处理失败: {str(e)}")
+            if file_progress:
+                self.finish_progress("file_progress", f"处理失败: {str(e)}")
             return False
     
     def process_all_files(self) -> Tuple[int, float]:
@@ -686,3 +759,5 @@ class AudioProcessor:
         
         if self.interrupt_received:
             logging.info("\n程序已安全终止，已保存处理进度。您可以稍后继续处理剩余文件。")
+# No backticks found in the code. If the error persists, manually replace them with repr()
+# Example: If you have `x`, replace it with repr(x)
