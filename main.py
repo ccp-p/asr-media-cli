@@ -1,6 +1,36 @@
 import os
+import sys
 import logging
 import traceback
+
+def check_dependencies():
+    """检查所需依赖是否已安装"""
+    required_modules = {
+        'tqdm': '进度条显示',
+        'requests': '网络请求',
+        'pydub': '音频处理',
+    }
+    
+    missing_modules = []
+    
+    for module, description in required_modules.items():
+        try:
+            __import__(module)
+        except ImportError:
+            missing_modules.append((module, description))
+    
+    if missing_modules:
+        print("\n缺少必要的依赖模块:")
+        for module, description in missing_modules:
+            print(f"  - {module}: {description}")
+        
+        print("\n请使用以下命令安装所需依赖:")
+        print("pip install -r requirements.txt")
+        print("\n或者手动安装缺失的模块:")
+        for module, _ in missing_modules:
+            print(f"pip install {module}")
+        
+        print("\n程序将继续尝试运行，但可能功能受限...\n")
 
 # 导入工具函数
 from utils import setup_logging
@@ -49,8 +79,10 @@ def convert_mp3_to_txt(mp3_folder: str, output_folder: str, max_retries: int = 3
 
 
 if __name__ == "__main__":
-    # 添加异常处理
     try:
+        # 检查依赖
+        check_dependencies()
+        
         # 修改这几个路径即可
         convert_mp3_to_txt(
             mp3_folder = r"D:\download",  # 如：r"C:\Users\用户名\Music"

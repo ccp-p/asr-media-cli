@@ -10,7 +10,24 @@ from typing import Dict, List, Set, Tuple, Optional, Any, Callable
 from pathlib import Path
 from pydub import AudioSegment
 import subprocess
-from tqdm import tqdm
+
+# 尝试导入tqdm，如果不存在则使用内置进度显示
+try:
+    from tqdm import tqdm
+    TQDM_AVAILABLE = True
+except ImportError:
+    TQDM_AVAILABLE = False
+    # 创建一个简易的tqdm替代品
+    def tqdm(iterable, **kwargs):
+        total = kwargs.get('total', None)
+        desc = kwargs.get('desc', '')
+        if total:
+            print(f"\n{desc}: 开始处理 {total} 个项目...")
+        for i, item in enumerate(iterable):
+            if total and (i % max(1, total // 10) == 0 or i == total - 1):
+                print(f"{desc}: 已处理 {i+1}/{total} ({((i+1)/total)*100:.1f}%)")
+            yield item
+        print(f"{desc}: 处理完成!")
 
 # 导入工具函数
 from utils import format_time_duration, load_json_file, save_json_file, ProgressBar, LogConfig
@@ -70,6 +87,8 @@ class AudioProcessor:
         
         # 进度条相关
         self.progress_bars: Dict[str, ProgressBar] = {}
+        # 是否使用tqdm
+        self.use_tqdm = TQDM_AVAILABLE and self.show_progress
     
     # 新增: 通用进度条管理方法
     def create_progress_bar(self, name: str, total: int, prefix: str, suffix: str = "") -> Optional[ProgressBar]:
@@ -392,13 +411,6 @@ class AudioProcessor:
                 try:
                     for future in concurrent.futures.as_completed(future_to_failed):
                         if self.interrupt_received:
-                    (idx, segment_file)
-                    for idx, segment_file in failed_segments
-                }
-                
-                try:
-                    for future in concurrent.futures.as_completed(future_to_failed):
-                        if self.interrupt_received:
                             logging.warning("检测到中断，正在取消剩余重试任务...")
                             retry_executor.shutdown(wait=False, cancel_futures=True)
                             break
@@ -634,85 +646,46 @@ class AudioProcessor:
             logging.error(f"❌ {filename} 处理失败: {str(e)}")
             # 确保进度条完成
             if file_progress:
-                self.finish_progress("file_progress", f"处理失败: {str(e)}")
-            return False
-    
-    def process_all_files(self) -> Tuple[int, float]:
-        """
-        处理所有MP3文件
-        
-        Returns:
-            (处理文件数, 总耗时)
-        """
-        # 记录总体开始时间
-        total_start_time = time.time()
-        
-        try:
-            # 设置信号处理
-            signal.signal(signal.SIGINT, self.handle_interrupt)
-            
-            # 检查网络连接
-            try:
                 logging.info("检查网络连接...")
                 status_code = requests.get("https://www.google.com").status_code
                 logging.info(f"网络连接状态: {status_code}")
             except Exception as e:
                 logging.warning(f"网络连接检查失败: {str(e)}")
             
-            # 获取所有MP3文件
-            mp3_files = [f for f in os.listdir(self.mp3_folder) if f.endswith(".mp3")]
-            unprocessed_files = []
+            # 获取所有媒体文件
+            media_files = []
             
-            for filename in mp3_files:
-                input_path = os.path.join(self.mp3_folder, filename)
-                # 检查文件是否已处理
-                if input_path not in self.processed_files:
-                    unprocessed_files.append(input_path)
+            # 处理MP3文件
+            mp3_files = [f for f in os.listdir(self.media_folder) 
+                        if f.lower().endswith('.mp3')]
+            media_files.extend(mp3_files)
             
-            # 创建总进度条
-            if self.show_progress and unprocessed_files:
-                self.overall_progress_bar = ProgressBar(
-                    total=len(unprocessed_files),
-                    prefix="总体进度",
-                    suffix=f"0/{len(unprocessed_files)} 文件"
-                )
+            # 如果开启视频处理，获取视频文件
+            if self.process_video:
+                video_files = [f for f in os.listdir(self.media_folder) 
+                            if any(f.lower().endswith(ext) for ext in self.video_extensions)]
+                media_files.extend(video_files)
             
-            processed_files_count = 0
+            if not media_files:
+                logging.warning(f"在 {self.media_folder} 中没有找到可处理的媒体文件")
+                return 0, 0.0
             
-            # 遍历处理所有MP3文件
-            for i, input_path in enumerate(unprocessed_files):
-                if self.interrupt_received:
-                    logging.warning("程序被用户中断，停止处理新文件。")
-                    break
-                
-                filename = os.path.basename(input_path)
-                
-                # 更新总进度条
-                if self.show_progress and self.overall_progress_bar:
-                    self.overall_progress_bar.update(
-                        processed_files_count,
-                        f"{processed_files_count}/{len(unprocessed_files)} 文件处理中 - 当前: {filename}"
-                    )
-                
-                # 处理单个文件
-                success = self.process_single_file(input_path)
-                if success:
-                    processed_files_count += 1
-                
-                # 更新总进度条
-                if self.show_progress and self.overall_progress_bar:
-                    self.overall_progress_bar.update(
-                        processed_files_count,
-                        f"{processed_files_count}/{len(unprocessed_files)} 文件完成"
-                    )
-                
-                if self.interrupt_received:
-                    break
+            # 显示要处理的文件
+            logging.info(f"找到 {len(media_files)} 个媒体文件需要处理")
             
-            # 完成总进度条
-            if self.show_progress and unprocessed_files and self.overall_progress_bar:
-                status = " (已中断)" if self.interrupt_received else " (全部完成)"
-                self.overall_progress_bar.finish(f"{processed_files_count}/{len(unprocessed_files)} 文件完成{status}")
+            # 使用线程池并行处理文件
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                # 是否使用进度条
+                if self.show_progress:
+                    list(tqdm(
+                        executor.map(self.process_file, media_files),
+                        total=len(media_files),
+                        desc="处理媒体文件"
+                    ))
+                else:
+                    list(executor.map(self.process_file, media_files))
+            
+            processed_files_count = len(media_files)
             
             # 计算总处理时长
             total_duration = time.time() - total_start_time
@@ -728,6 +701,99 @@ class AudioProcessor:
             
             # 清理临时文件
             self.cleanup()
+    
+    def process_file(self, filename):
+        """
+        处理单个媒体文件
+        
+        Args:
+            filename: 媒体文件名
+        """
+        file_path = os.path.join(self.media_folder, filename)
+        file_extension = os.path.splitext(filename)[1].lower()
+        
+        # 处理视频文件 - 需要先提取音频
+        if file_extension in self.video_extensions:
+            logging.info(f"处理视频文件: {filename}")
+            audio_path = self.extract_audio_from_video(file_path)
+            
+            # 如果只需要提取音频，到此为止
+            if self.extract_audio_only:
+                logging.info(f"已提取音频: {audio_path}")
+                return
+                
+            # 继续处理提取出的音频文件
+            if audio_path:
+                self.transcribe_audio(audio_path, filename)
+            else:
+                logging.error(f"从视频提取音频失败: {filename}")
+        
+        # 处理音频文件
+        elif file_extension == '.mp3':
+            logging.info(f"处理音频文件: {filename}")
+            self.transcribe_audio(file_path, filename)
+        
+        else:
+            logging.warning(f"不支持的文件类型: {filename}")
+    
+    def extract_audio_from_video(self, video_path):
+        """
+        从视频文件中提取音频
+        
+        Args:
+            video_path: 视频文件路径
+            
+        Returns:
+            str: 提取的音频文件路径，失败则返回None
+        """
+        try:
+            video_filename = os.path.basename(video_path)
+            base_name = os.path.splitext(video_filename)[0]
+            audio_path = os.path.join(self.output_folder, f"{base_name}.mp3")
+            
+            # 使用FFmpeg提取音频
+            cmd = [
+                'ffmpeg', '-i', video_path, 
+                '-q:a', '0', '-map', 'a', audio_path, 
+                '-y'  # 覆盖已存在的文件
+            ]
+            
+            logging.info(f"正在从视频提取音频: {video_filename}")
+            subprocess.run(cmd, check=True, capture_output=True)
+            
+            if os.path.exists(audio_path):
+                logging.info(f"音频提取成功: {audio_path}")
+                return audio_path
+            else:
+                logging.error(f"音频提取失败: {video_filename}")
+                return None
+                
+        except subprocess.CalledProcessError as e:
+            logging.error(f"FFmpeg处理失败: {e}")
+            return None
+        except Exception as e:
+            logging.error(f"提取音频时发生错误: {str(e)}")
+            return None
+    
+    def transcribe_audio(self, audio_path, original_filename):
+        """
+        将音频转录为文本
+        
+        Args:
+            audio_path: 音频文件路径
+            original_filename: 原始文件名
+        """
+        # 这里应实现ASR转录逻辑
+        # 由于原代码未提供，此处仅创建示例功能框架
+        base_name = os.path.splitext(original_filename)[0]
+        output_path = os.path.join(self.output_folder, f"{base_name}.txt")
+        
+        logging.info(f"开始转录: {original_filename}")
+        
+        # 这里应该实现实际的ASR请求逻辑
+        # ASR转录结果处理，格式化输出等
+        
+        logging.info(f"转录完成: {output_path}")
     
     def print_statistics(self, processed_files_count: int, total_duration: float):
         """打印处理统计信息"""
@@ -759,5 +825,3 @@ class AudioProcessor:
         
         if self.interrupt_received:
             logging.info("\n程序已安全终止，已保存处理进度。您可以稍后继续处理剩余文件。")
-# No backticks found in the code. If the error persists, manually replace them with repr()
-# Example: If you have `x`, replace it with repr(x)

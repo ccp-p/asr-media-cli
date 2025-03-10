@@ -1,6 +1,10 @@
-# 依赖包列表
-SpeechRecognition>=3.8.1
+# 基础依赖
+tqdm>=4.65.0
+requests>=2.30.0
 pydub>=0.25.1
-requests>=2.27.1
+
+# 视频处理依赖
+ffmpeg-python>=0.2.0
+SpeechRecognition>=3.8.1
 typing>=3.7.4.3
 # 根据需要添加其他依赖
