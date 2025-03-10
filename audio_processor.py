@@ -11,7 +11,7 @@ from pathlib import Path
 from pydub import AudioSegment
 
 # 导入工具函数
-from utils import format_time_duration, load_json_file, save_json_file
+from utils import format_time_duration, load_json_file, save_json_file, ProgressBar, LogConfig
 
 # 导入ASR模块和ASR管理器
 from asr import ASRDataSeg
@@ -25,7 +25,7 @@ class AudioProcessor:
                  max_retries: int = 3, max_workers: int = 4,
                  use_jianying_first: bool = False, use_kuaishou: bool = False, 
                  use_bcut: bool = False, format_text: bool = True,
-                 include_timestamps: bool = True):
+                 include_timestamps: bool = True, show_progress: bool = True):
         """
         初始化音频处理器
         
@@ -39,6 +39,7 @@ class AudioProcessor:
             use_bcut: 是否使用B站ASR
             format_text: 是否格式化输出文本以提高可读性
             include_timestamps: 是否在格式化文本中包含时间戳
+            show_progress: 是否显示进度条
         """
         self.mp3_folder = mp3_folder
         self.output_folder = output_folder
@@ -49,6 +50,7 @@ class AudioProcessor:
         self.use_bcut = use_bcut
         self.format_text = format_text
         self.include_timestamps = include_timestamps
+        self.show_progress = show_progress  # 新增进度条显示开关
         
         # 创建输出文件夹
         os.makedirs(self.output_folder, exist_ok=True)
@@ -72,6 +74,10 @@ class AudioProcessor:
             use_kuaishou=use_kuaishou,
             use_bcut=use_bcut
         )
+        
+        # 进度条相关
+        self.overall_progress_bar = None
+        self.file_progress_bar = None
     
     def _save_processed_records(self):
         """保存已处理文件记录"""
@@ -104,6 +110,18 @@ class AudioProcessor:
             total_duration = len(audio) // 1000
             logging.info(f"音频总时长: {total_duration}秒")
             
+            # 预计片段数
+            expected_segments = (total_duration + segment_length - 1) // segment_length
+            
+            # 创建分割进度条
+            split_progress = None
+            if self.show_progress:
+                split_progress = ProgressBar(
+                    total=expected_segments, 
+                    prefix=f"分割 {filename}", 
+                    suffix="准备中"
+                )
+            
             segment_files = []
             
             # 分割音频
@@ -114,17 +132,30 @@ class AudioProcessor:
                 # 导出为WAV格式（兼容语音识别API）
                 output_filename = f"{os.path.splitext(filename)[0]}_part{i+1:03d}.wav"
                 output_path = os.path.join(self.temp_segments_dir, output_filename)
+                
+                # 更新进度条
+                if split_progress:
+                    split_progress.update(i, f"导出片段 {i+1}/{expected_segments}")
+                
                 segment.export(
                     output_path,
                     format="wav",
                     parameters=["-ac", "1", "-ar", "16000"]  # 单声道，16kHz采样率
                 )
                 segment_files.append(output_filename)
-                logging.info(f"  ├─ 分割完成: {output_filename}")
+                logging.debug(f"  ├─ 分割完成: {output_filename}")
+            
+            # 完成进度条
+            if split_progress:
+                split_progress.finish(f"完成 - {len(segment_files)} 个片段")
             
             return segment_files
             
         except Exception as e:
+            # 确保进度条完成
+            if 'split_progress' in locals() and split_progress:
+                split_progress.finish(f"失败 - {str(e)}")
+                
             logging.error(f"分割音频文件 {filename} 失败: {str(e)}")
             return []
     
@@ -155,6 +186,15 @@ class AudioProcessor:
         
         logging.info(f"开始多线程识别 {len(segment_files)} 个音频片段...")
         
+        # 创建识别进度条
+        recognize_progress = None
+        if self.show_progress:
+            recognize_progress = ProgressBar(
+                total=len(segment_files), 
+                prefix="识别进度", 
+                suffix=f"0/{len(segment_files)} 片段完成"
+            )
+            
         # 使用线程池并行处理音频片段
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             # 创建任务字典，映射片段索引和对应的Future对象
@@ -166,6 +206,7 @@ class AudioProcessor:
             
             # 收集结果，并添加中断检查
             try:
+                completed_count = 0
                 for future in concurrent.futures.as_completed(future_to_segment):
                     if self.interrupt_received:
                         logging.warning("检测到中断，正在取消剩余任务...")
@@ -175,19 +216,49 @@ class AudioProcessor:
                     i, segment_file = future_to_segment[future]
                     try:
                         text = future.result(timeout=60)  # 添加超时以避免无限等待
+                        completed_count += 1
+                        
                         if text:
                             segment_results[i] = text
-                            logging.info(f"  ├─ 成功识别: {segment_file}")
+                            status_text = f"{completed_count}/{len(segment_files)} 片段完成 (成功识别 {len(segment_results)})"
+                            logging.debug(f"  ├─ 成功识别: {segment_file}")
                         else:
+                            status_text = f"{completed_count}/{len(segment_files)} 片段完成 (失败 {completed_count - len(segment_results)})"
                             logging.warning(f"  ├─ 识别失败: {segment_file}")
+                        
+                        # 更新进度条
+                        if recognize_progress:
+                            recognize_progress.update(completed_count, status_text)
+                            
                     except concurrent.futures.TimeoutError:
+                        completed_count += 1
                         logging.warning(f"  ├─ 识别超时: {segment_file}")
+                        if recognize_progress:
+                            recognize_progress.update(
+                                completed_count, 
+                                f"{completed_count}/{len(segment_files)} 片段完成 (超时 {segment_file})"
+                            )
                     except Exception as exc:
+                        completed_count += 1
                         logging.error(f"  ├─ 识别出错: {segment_file} - {str(exc)}")
+                        if recognize_progress:
+                            recognize_progress.update(
+                                completed_count, 
+                                f"{completed_count}/{len(segment_files)} 片段完成 (错误)"
+                            )
             except KeyboardInterrupt:
                 logging.warning("检测到用户中断，正在取消剩余任务...")
                 executor.shutdown(wait=False, cancel_futures=True)
                 self.interrupt_received = True
+            
+        # 完成进度条
+        if recognize_progress:
+            success_count = len(segment_results)
+            fail_count = len(segment_files) - success_count
+            recognize_progress.finish(
+                f"完成 - {success_count} 成功, {fail_count} 失败" + 
+                (" (已中断)" if self.interrupt_received else "")
+            )
         
         return segment_results
     
@@ -220,7 +291,19 @@ class AudioProcessor:
                 break
                 
             logging.info(f"第 {retry_round} 轮重试 ({len(failed_segments)} 个片段):")
+            
+            # 创建重试进度条
+            retry_progress = None
+            if self.show_progress:
+                retry_progress = ProgressBar(
+                    total=len(failed_segments), 
+                    prefix=f"重试 #{retry_round}", 
+                    suffix=f"0/{len(failed_segments)} 片段完成"
+                )
+            
             still_failed = []
+            success_in_round = 0
+            completed_count = 0
             
             # 对失败的片段进行多线程重试
             with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as retry_executor:
@@ -239,26 +322,69 @@ class AudioProcessor:
                             break
                             
                         idx, segment_file = future_to_failed[future]
+                        completed_count += 1
+                        
                         try:
                             text = future.result(timeout=60)
                             if text:
                                 segment_results[idx] = text
-                                logging.info(f"  ├─ 重试成功: {segment_file}")
+                                success_in_round += 1
+                                logging.debug(f"  ├─ 重试成功: {segment_file}")
+                                
+                                # 更新进度条
+                                if retry_progress:
+                                    retry_progress.update(
+                                        completed_count, 
+                                        f"{completed_count}/{len(failed_segments)} 完成 (成功 {success_in_round})"
+                                    )
                             else:
                                 still_failed.append((idx, segment_file))
                                 logging.warning(f"  ├─ 重试失败: {segment_file}")
+                                
+                                # 更新进度条
+                                if retry_progress:
+                                    retry_progress.update(
+                                        completed_count, 
+                                        f"{completed_count}/{len(failed_segments)} 完成 (失败 {len(still_failed)})"
+                                    )
                         except concurrent.futures.TimeoutError:
                             still_failed.append((idx, segment_file))
                             logging.warning(f"  ├─ 重试超时: {segment_file}")
+                            
+                            # 更新进度条
+                            if retry_progress:
+                                retry_progress.update(
+                                    completed_count, 
+                                    f"{completed_count}/{len(failed_segments)} 完成 (超时 {len(still_failed)})"
+                                )
                         except Exception as exc:
                             still_failed.append((idx, segment_file))
                             logging.error(f"  ├─ 重试出错: {segment_file} - {str(exc)}")
+                            
+                            # 更新进度条
+                            if retry_progress:
+                                retry_progress.update(
+                                    completed_count, 
+                                    f"{completed_count}/{len(failed_segments)} 完成 (错误 {len(still_failed)})"
+                                )
                 except KeyboardInterrupt:
                     logging.warning("检测到用户中断，正在取消剩余重试任务...")
                     retry_executor.shutdown(wait=False, cancel_futures=True)
                     self.interrupt_received = True
             
+            # 完成进度条
+            if retry_progress:
+                retry_progress.finish(
+                    f"完成 - 成功 {success_in_round}, 仍失败 {len(still_failed)}" +
+                    (" (已中断)" if self.interrupt_received else "")
+                )
+            
             failed_segments = still_failed
+            logging.info(f"  └─ 第 {retry_round} 轮重试结果: 成功 {success_in_round}, 仍失败 {len(still_failed)}")
+            
+            if not still_failed:
+                logging.info("  └─ 所有片段都已成功识别，无需继续重试")
+                break
         
         return segment_results
     
@@ -278,6 +404,14 @@ class AudioProcessor:
         all_text = []
         all_timestamps = []
         
+        # 显示文本准备进度条
+        if self.show_progress:
+            text_prep_progress = ProgressBar(
+                total=len(segment_files),
+                prefix="文本准备",
+                suffix="处理中"
+            )
+        
         for i in range(len(segment_files)):
             if i in segment_results:
                 all_text.append(segment_results[i])
@@ -292,15 +426,36 @@ class AudioProcessor:
                     'start': i * 30,
                     'end': (i + 1) * 30
                 })
+                
+            # 更新进度条
+            if self.show_progress:
+                text_prep_progress.update(
+                    i + 1, 
+                    f"处理片段 {i+1}/{len(segment_files)}"
+                )
+        
+        # 完成文本准备进度条
+        if self.show_progress:
+            text_prep_progress.finish("文本片段处理完成")
         
         # 格式化文本以提高可读性
         if self.format_text:
+            if self.show_progress:
+                format_progress = ProgressBar(
+                    total=1,
+                    prefix="格式化文本",
+                    suffix="处理中"
+                )
+            
             full_text = TextFormatter.format_segment_text(
                 all_text, 
                 timestamps=all_timestamps if self.include_timestamps else None,
                 include_timestamps=self.include_timestamps,
                 separate_segments=True  # 启用分片分隔
             )
+            
+            if self.show_progress:
+                format_progress.finish("格式化完成")
         else:
             # 如果不格式化，仍使用原来的合并方式
             full_text = "\n\n".join([text for text in all_text if text and text != "[无法识别的音频片段]"])
@@ -320,26 +475,50 @@ class AudioProcessor:
         filename = os.path.basename(input_path)
         
         try:
+            # 创建单个文件总进度条
+            if self.show_progress:
+                file_progress = ProgressBar(
+                    total=4,  # 分割、识别、重试、保存 4个阶段
+                    prefix=f"处理 {filename}",
+                    suffix="准备中"
+                )
+            
             # 记录单个文件处理开始时间
             file_start_time = time.time()
             
             # 分割音频为较小片段
+            if self.show_progress:
+                file_progress.update(0, "分割音频")
+            
             segment_files = self.split_audio_file(input_path)
             if not segment_files:
                 logging.error(f"分割 {filename} 失败，跳过此文件")
+                if self.show_progress:
+                    file_progress.finish("分割失败，跳过")
                 return False
             
             # 处理音频片段
+            if self.show_progress:
+                file_progress.update(1, "识别音频")
+            
             segment_results = self.process_audio_segments(segment_files)
             
             # 如果处理被中断，保存当前结果并退出
             if self.interrupt_received:
                 logging.warning("处理被中断，尝试保存已完成的识别结果...")
+                if self.show_progress:
+                    file_progress.update(2, "处理被中断")
             else:
                 # 重试失败的片段
+                if self.show_progress:
+                    file_progress.update(2, "重试失败片段")
+                
                 segment_results = self.retry_failed_segments(segment_files, segment_results)
             
             # 准备结果文本
+            if self.show_progress:
+                file_progress.update(3, "生成文本")
+            
             full_text = self.prepare_result_text(segment_files, segment_results)
             
             # 保存结果到文件
@@ -356,24 +535,33 @@ class AudioProcessor:
             formatted_duration = format_time_duration(file_duration)
             
             status = "（部分完成 - 已中断）" if self.interrupt_received else ""
-            logging.info(f"✅ {filename} 转换完成{status}: 成功识别 {success_count}/{len(segment_files)} 片段" + 
-                      (f", 失败 {fail_count} 片段" if fail_count > 0 else "") + 
-                      f" - 耗时: {formatted_duration}")
             
             # 更新已处理记录
             self.processed_files[input_path] = {
                 "processed_time": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "output_file": output_file,
                 "interrupted": self.interrupt_received,
-                "success_rate": f"{success_count}/{len(segment_files)}"
+                "success_rate": f"{success_count}/{len(segment_files)}",
+                "duration": formatted_duration
             }
             self._save_processed_records()
             
-            logging.info(f"✅ 文件已处理完成并记录: {os.path.basename(input_path)}")
+            # 完成文件处理进度条
+            if self.show_progress:
+                success_rate = f"{success_count}/{len(segment_files)}"
+                file_progress.finish(f"完成 - 成功率: {success_rate}, 耗时: {formatted_duration}")
+            
+            logging.info(f"✅ {filename} 转换完成{status}: 成功识别 {success_count}/{len(segment_files)} 片段" + 
+                      (f", 失败 {fail_count} 片段" if fail_count > 0 else "") + 
+                      f" - 耗时: {formatted_duration}")
+            
             return True
             
         except Exception as e:
             logging.error(f"❌ {filename} 处理失败: {str(e)}")
+            # 确保进度条完成
+            if self.show_progress and 'file_progress' in locals():
+                file_progress.finish(f"处理失败: {str(e)}")
             return False
     
     def process_all_files(self) -> Tuple[int, float]:
@@ -385,12 +573,11 @@ class AudioProcessor:
         """
         # 记录总体开始时间
         total_start_time = time.time()
-        processed_files_count = 0
-        
-        # 设置信号处理
-        signal.signal(signal.SIGINT, self.handle_interrupt)
         
         try:
+            # 设置信号处理
+            signal.signal(signal.SIGINT, self.handle_interrupt)
+            
             # 检查网络连接
             try:
                 logging.info("检查网络连接...")
@@ -399,29 +586,60 @@ class AudioProcessor:
             except Exception as e:
                 logging.warning(f"网络连接检查失败: {str(e)}")
             
+            # 获取所有MP3文件
+            mp3_files = [f for f in os.listdir(self.mp3_folder) if f.endswith(".mp3")]
+            unprocessed_files = []
+            
+            for filename in mp3_files:
+                input_path = os.path.join(self.mp3_folder, filename)
+                # 检查文件是否已处理
+                if input_path not in self.processed_files:
+                    unprocessed_files.append(input_path)
+            
+            # 创建总进度条
+            if self.show_progress and unprocessed_files:
+                self.overall_progress_bar = ProgressBar(
+                    total=len(unprocessed_files),
+                    prefix="总体进度",
+                    suffix=f"0/{len(unprocessed_files)} 文件"
+                )
+            
+            processed_files_count = 0
+            
             # 遍历处理所有MP3文件
-            for filename in os.listdir(self.mp3_folder):
+            for i, input_path in enumerate(unprocessed_files):
                 if self.interrupt_received:
                     logging.warning("程序被用户中断，停止处理新文件。")
                     break
-                    
-                if not filename.endswith(".mp3"):
-                    continue
-                    
-                input_path = os.path.join(self.mp3_folder, filename)
                 
-                # 检查文件是否已处理
-                if input_path in self.processed_files:
-                    logging.info(f"跳过 {filename}（已处理）")
-                    continue
+                filename = os.path.basename(input_path)
+                
+                # 更新总进度条
+                if self.show_progress and self.overall_progress_bar:
+                    self.overall_progress_bar.update(
+                        processed_files_count,
+                        f"{processed_files_count}/{len(unprocessed_files)} 文件处理中 - 当前: {filename}"
+                    )
                 
                 # 处理单个文件
                 success = self.process_single_file(input_path)
                 if success:
                     processed_files_count += 1
                 
+                # 更新总进度条
+                if self.show_progress and self.overall_progress_bar:
+                    self.overall_progress_bar.update(
+                        processed_files_count,
+                        f"{processed_files_count}/{len(unprocessed_files)} 文件完成"
+                    )
+                
                 if self.interrupt_received:
                     break
+            
+            # 完成总进度条
+            if self.show_progress and unprocessed_files and self.overall_progress_bar:
+                status = " (已中断)" if self.interrupt_received else " (全部完成)"
+                self.overall_progress_bar.finish(f"{processed_files_count}/{len(unprocessed_files)} 文件完成{status}")
             
             # 计算总处理时长
             total_duration = time.time() - total_start_time

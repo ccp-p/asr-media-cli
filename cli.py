@@ -2,6 +2,8 @@ import argparse
 import os
 from typing import Dict, Any
 
+from utils import LogConfig
+
 def parse_args() -> Dict[str, Any]:
     """
     解析命令行参数
@@ -79,6 +81,26 @@ def parse_args() -> Dict[str, Any]:
         help='不在文本中包含时间戳'
     )
     
+    # 新增日志级别控制
+    log_group = parser.add_argument_group('日志和显示设置')
+    log_group.add_argument(
+        '--verbose', 
+        action='store_true',
+        help='显示详细日志'
+    )
+    
+    log_group.add_argument(
+        '--quiet', 
+        action='store_true',
+        help='静默模式，只显示警告和错误'
+    )
+    
+    log_group.add_argument(
+        '--no_progress', 
+        action='store_true',
+        help='不显示进度条'
+    )
+    
     # 解析参数
     args = parser.parse_args()
     
@@ -88,6 +110,15 @@ def parse_args() -> Dict[str, Any]:
     # 处理反向参数（--no_xxx 转为 xxx=False）
     args_dict['format_text'] = not args_dict.pop('no_format_text')
     args_dict['include_timestamps'] = not args_dict.pop('no_timestamps')
+    args_dict['show_progress'] = not args_dict.pop('no_progress')
+    
+    # 处理日志级别
+    log_mode = LogConfig.NORMAL
+    if args_dict.pop('verbose'):
+        log_mode = LogConfig.VERBOSE
+    elif args_dict.pop('quiet'):
+        log_mode = LogConfig.QUIET
+    args_dict['log_mode'] = log_mode
     
     # 重命名参数以符合函数命名
     args_dict['mp3_folder'] = args_dict.pop('input_folder')
@@ -110,5 +141,7 @@ def get_default_args() -> Dict[str, Any]:
         'use_kuaishou': True,
         'use_bcut': True,
         'format_text': True,
-        'include_timestamps': True
+        'include_timestamps': True,
+        'show_progress': True,
+        'log_mode': LogConfig.NORMAL
     }

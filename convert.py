@@ -3,18 +3,11 @@ import logging
 import traceback
 
 # 导入工具函数
-from utils import setup_logging
+from utils import LogConfig, setup_logging
 
 # 导入AudioProcessor模块和命令行参数处理
 from audio_processor import AudioProcessor
 from cli import parse_args, get_default_args
-
-# 配置日志
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-# 设置代理(如需要)
-os.environ["HTTP_PROXY"] = "http://127.0.0.1:7890"
-os.environ["HTTPS_PROXY"] = "http://127.0.0.1:7890"
 
 def convert_mp3_to_txt(**kwargs) -> None:
     """
@@ -31,7 +24,20 @@ def convert_mp3_to_txt(**kwargs) -> None:
             use_bcut: 是否使用B站ASR
             format_text: 是否格式化输出文本以提高可读性
             include_timestamps: 是否在格式化文本中包含时间戳
+            show_progress: 是否显示进度条
+            log_mode: 日志级别 (VERBOSE/NORMAL/QUIET)
     """
+    # 设置代理(如需要)
+    os.environ["HTTP_PROXY"] = "http://127.0.0.1:7890"
+    os.environ["HTTPS_PROXY"] = "http://127.0.0.1:7890"
+    
+    # 提取并移除日志模式参数
+    log_mode = kwargs.pop('log_mode', LogConfig.NORMAL)
+    
+    # 设置日志级别
+    setup_logging(level=logging.INFO, log_mode=log_mode)
+    
+    # 创建并运行音频处理器
     processor = AudioProcessor(**kwargs)
     processor.process_all_files()
 
