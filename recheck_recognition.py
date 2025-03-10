@@ -8,7 +8,7 @@ import argparse
 import time
 
 # 导入现有的处理模块
-from covert import convert_mp3_to_txt, load_processed_records
+from main import convert_mp3_to_txt, load_processed_records
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
