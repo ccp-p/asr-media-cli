@@ -26,10 +26,7 @@ def find_mp3_by_txt_name(txt_file_path: str, processed_records: Dict) -> str:
     # 从记录中查找
     for mp3_path, info in processed_records.items():
         if info.get("output_file") == txt_file_path:
-            # 检查记录的mp3文件是否存在
-            if "new_path" in info and os.path.exists(info["new_path"]):
-                return info["new_path"]
-            # 如果不存在，检查原路径
+            # 检查原始MP3文件是否存在
             if os.path.exists(mp3_path):
                 return mp3_path
     
@@ -39,14 +36,10 @@ def find_mp3_by_txt_name(txt_file_path: str, processed_records: Dict) -> str:
     
     # 尝试在相同目录查找
     mp3_dir = os.path.dirname(os.path.dirname(txt_file_path))  # 假设mp3在txt上级目录
-    potential_mp3_files = [
-        os.path.join(mp3_dir, f"{txt_name_without_ext}.mp3"),
-        os.path.join(mp3_dir, f"{txt_name_without_ext}_recognized.mp3")
-    ]
+    mp3_path = os.path.join(mp3_dir, f"{txt_name_without_ext}.mp3")
     
-    for mp3_path in potential_mp3_files:
-        if os.path.exists(mp3_path):
-            return mp3_path
+    if os.path.exists(mp3_path):
+        return mp3_path
     
     return ""
 
@@ -103,6 +96,14 @@ def find_files_needing_recheck(output_folder: str, processed_record_file: str) -
     
     return files_to_recheck
 
+def format_time_duration(seconds):
+    """
+    将秒数格式化为更易读的时间格式 (HH:MM:SS)
+    """
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}"
+
 def reprocess_audio_files(files_to_recheck: List[Tuple[str, str]], 
                          temp_output_folder: str,
                          use_jianying_first: bool = True, 
@@ -126,6 +127,9 @@ def reprocess_audio_files(files_to_recheck: List[Tuple[str, str]],
         logging.info("没有找到需要重新识别的文件")
         return
     
+    # 记录总开始时间
+    total_start_time = time.time()
+    
     # 创建临时文件夹
     os.makedirs(temp_output_folder, exist_ok=True)
     
@@ -134,12 +138,13 @@ def reprocess_audio_files(files_to_recheck: List[Tuple[str, str]],
     
     for i, (mp3_path, txt_path) in enumerate(files_to_recheck):
         try:
+            # 记录单个文件开始时间
+            file_start_time = time.time()
+            
             logging.info(f"处理文件 {i+1}/{total_files}: {os.path.basename(mp3_path)}")
             
-            # 复制mp3到临时目录（需要先去除_recognized后缀）
+            # 复制mp3到临时目录（不再需要去除_recognized后缀）
             mp3_name = os.path.basename(mp3_path)
-            if "_recognized" in mp3_name:
-                mp3_name = mp3_name.replace("_recognized", "")
             
             temp_mp3_path = os.path.join(temp_output_folder, mp3_name)
             with open(mp3_path, 'rb') as src_file:
@@ -181,11 +186,25 @@ def reprocess_audio_files(files_to_recheck: List[Tuple[str, str]],
                 os.remove(temp_mp3_path)
             if os.path.exists(new_txt_path):
                 os.remove(new_txt_path)
+            
+            # 计算并打印文件处理时长
+            file_duration = time.time() - file_start_time
+            formatted_duration = format_time_duration(file_duration)
+            logging.info(f"文件处理完成，耗时: {formatted_duration}")
                 
         except Exception as e:
             logging.error(f"处理文件 {os.path.basename(mp3_path)} 时出错: {e}")
     
-    logging.info(f"重新识别完成，成功处理 {success_count}/{total_files} 个文件")
+    # 计算总处理时长
+    total_duration = time.time() - total_start_time
+    formatted_total_duration = format_time_duration(total_duration)
+    logging.info(f"重新识别完成，成功处理 {success_count}/{total_files} 个文件，总耗时: {formatted_total_duration}")
+    
+    # 计算平均处理时长
+    if success_count > 0:
+        avg_time = total_duration / success_count
+        formatted_avg_time = format_time_duration(avg_time)
+        logging.info(f"平均每个文件处理时长: {formatted_avg_time}")
     
     # 尝试清理临时文件夹
     try:

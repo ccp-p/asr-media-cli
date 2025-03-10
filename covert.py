@@ -10,6 +10,7 @@ import requests
 import sys
 import signal
 from pydub import AudioSegment
+from datetime import datetime, timedelta
 
 # 导入ASR模块
 from asr import GoogleASR, JianYingASR, KuaiShouASR, BcutASR, ASRDataSeg, ASRServiceSelector
@@ -165,6 +166,14 @@ def split_audio(input_folder, output_folder, segment_length=55, file_pattern=Non
                 )
                 print(f"  ├─ 分割完成: {output_filename}")
 
+def format_time_duration(seconds):
+    """
+    将秒数格式化为更易读的时间格式 (HH:MM:SS)
+    """
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}"
+
 def convert_mp3_to_txt(mp3_folder, output_folder, max_retries=3, max_workers=4, 
                       use_jianying_first=False, use_kuaishou=False, use_bcut=False,
                       format_text=True, include_timestamps=True):
@@ -182,6 +191,10 @@ def convert_mp3_to_txt(mp3_folder, output_folder, max_retries=3, max_workers=4,
         format_text: 是否格式化输出文本以提高可读性
         include_timestamps: 是否在格式化文本中包含时间戳
     """
+    # 记录总体开始时间
+    total_start_time = time.time()
+    processed_files_count = 0
+    
     # 注册ASR服务
     register_asr_services(use_jianying_first, use_kuaishou, use_bcut)
     
@@ -224,12 +237,10 @@ def convert_mp3_to_txt(mp3_folder, output_folder, max_retries=3, max_workers=4,
                     print(f"跳过 {filename}（已处理）")
                     continue
                 
-                # 检查文件名是否包含"_recognized"标记
-                if "_recognized" in filename:
-                    print(f"跳过 {filename}（已标记为已识别）")
-                    continue
-                
                 try:
+                    # 记录单个文件处理开始时间
+                    file_start_time = time.time()
+                    
                     # 分割音频为较小片段
                     print(f"正在分割 {filename} 为小片段...")
                     split_audio(
@@ -389,33 +400,30 @@ def convert_mp3_to_txt(mp3_folder, output_folder, max_retries=3, max_workers=4,
                     success_count = len(segment_results)
                     fail_count = len(segment_files) - success_count
                     
+                    # 计算并显示单个文件处理时长
+                    file_duration = time.time() - file_start_time
+                    formatted_duration = format_time_duration(file_duration)
+                    
                     status = "（部分完成 - 已中断）" if interrupt_received else ""
                     print(f"✅ {filename} 转换完成{status}: 成功识别 {success_count}/{len(segment_files)} 片段" + 
-                          (f", 失败 {fail_count} 片段" if fail_count > 0 else ""))
+                          (f", 失败 {fail_count} 片段" if fail_count > 0 else "") + 
+                          f" - 耗时: {formatted_duration}")
                     
-                    # 重命名原文件，添加"_recognized"标识
-                    base_name = os.path.basename(input_path)
-                    dir_name = os.path.dirname(input_path)
-                    name, ext = os.path.splitext(base_name)
-                    new_path = os.path.join(dir_name, f"{name}_recognized{ext}")
-                    try:
-                        os.rename(input_path, new_path)
-                    except Exception as e:
-                        print(f"⚠️ 无法重命名文件: {str(e)}")
-                        new_path = input_path  # 如果重命名失败，保留原路径
+                    # 不再重命名MP3文件，只更新处理记录
                     
                     # 更新已处理记录
                     processed_files[input_path] = {
                         "processed_time": time.strftime("%Y-%m-%d %H:%M:%S"),
-                        "new_path": new_path,
                         "output_file": output_file,
                         "interrupted": interrupt_received,
                         "success_rate": f"{success_count}/{len(segment_files)}"
                     }
                     save_processed_records(processed_record_file, processed_files)
                     
-                    if new_path != input_path:
-                        print(f"✅ 已重命名文件为: {os.path.basename(new_path)}")
+                    print(f"✅ 文件已处理完成并记录: {os.path.basename(input_path)}")
+                    
+                    # 更新处理文件计数
+                    processed_files_count += 1
                     
                     if interrupt_received:
                         print("用户中断处理，退出处理循环")
@@ -426,12 +434,24 @@ def convert_mp3_to_txt(mp3_folder, output_folder, max_retries=3, max_workers=4,
                     if interrupt_received:
                         break
         
+        # 计算并显示总处理时长
+        total_duration = time.time() - total_start_time
+        formatted_total_duration = format_time_duration(total_duration)
+        
         # 所有识别完成后，显示服务使用统计
         stats = asr_selector.get_service_stats()
         print("\nASR服务使用统计:")
         for name, stat in stats.items():
             print(f"  {name}: 使用次数 {stat['count']}, 成功率 {stat['success_rate']}, 可用状态: {'可用' if stat['available'] else '禁用'}")
                     
+        # 打印总结信息
+        print(f"\n总结: 处理了 {processed_files_count} 个文件, 总耗时: {formatted_total_duration}")
+        # 显示平均每个文件处理时长
+        if processed_files_count > 0:
+            avg_time = total_duration / processed_files_count
+            formatted_avg_time = format_time_duration(avg_time)
+            print(f"平均每个文件处理时长: {formatted_avg_time}")
+            
     finally:
         # 恢复原始信号处理程序
         signal.signal(signal.SIGINT, original_sigint_handler)
@@ -454,7 +474,7 @@ if __name__ == "__main__":
             mp3_folder = r"D:\download",  # 如：r"C:\Users\用户名\Music"
             output_folder = r"D:\download\dest",  # 如：r"D:\output"
             max_retries = 3,  # 集中重试的最大次数
-            max_workers = 4,   # 线程池中的线程数，可根据CPU配置调整
+            max_workers = 6,   # 线程池中的线程数，可根据CPU配置调整
             use_jianying_first = True,  # 设置为True表示优先使用剪映API进行识别
             use_kuaishou = True,   # 设置为True表示使用快手API进行识别
             use_bcut = True,  # 设置为True表示优先使用B站ASR进行识别（优先级最高）
