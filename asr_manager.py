@@ -1,5 +1,7 @@
 import os
 import logging
+import subprocess
+import tempfile
 from typing import Dict, Tuple, List, Optional, Any, Type, Set, Callable
 import random
 
@@ -137,3 +139,88 @@ class ASRManager:
             服务使用统计数据
         """
         return self.selector.get_service_stats()
+    
+    def is_video_file(self, file_path: str) -> bool:
+        """
+        判断文件是否为视频文件
+        
+        Args:
+            file_path: 文件路径
+            
+        Returns:
+            是否为视频文件
+        """
+        video_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.webm'}
+        _, ext = os.path.splitext(file_path.lower())
+        return ext in video_extensions
+        
+    def extract_audio_from_video(self, video_path: str) -> str:
+        """
+        从视频提取音频
+        
+        Args:
+            video_path: 视频文件路径
+            
+        Returns:
+            提取的音频文件路径
+        """
+        # 创建临时文件用于存储提取的音频
+        temp_dir = tempfile.gettempdir()
+        video_filename = os.path.basename(video_path)
+        audio_filename = f"{os.path.splitext(video_filename)[0]}_audio.wav"
+        audio_path = os.path.join(temp_dir, audio_filename)
+        
+        try:
+            # 使用FFmpeg提取音频
+            cmd = [
+                'ffmpeg',
+                '-i', video_path,
+                '-q:a', '0',
+                '-map', 'a',
+                '-y',  # 覆盖已存在的文件
+                audio_path
+            ]
+            
+            logging.info(f"正在从视频提取音频: {video_filename}")
+            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            logging.info(f"音频提取成功: {audio_filename}")
+            
+            return audio_path
+        except subprocess.CalledProcessError as e:
+            logging.error(f"音频提取失败: {str(e)}")
+            raise RuntimeError(f"无法从视频提取音频: {str(e)}")
+        except Exception as e:
+            logging.error(f"处理视频时出错: {str(e)}")
+            raise
+    
+    def recognize_media(self, media_path: str, max_attempts: int = 3) -> Optional[str]:
+        """
+        识别音频或视频文件内容
+        
+        Args:
+            media_path: 媒体文件路径（音频或视频）
+            max_attempts: 最大尝试次数
+            
+        Returns:
+            识别结果文本，失败返回None
+        """
+        try:
+            # 判断输入是视频还是音频
+            if self.is_video_file(media_path):
+                # 视频先提取音频
+                audio_path = self.extract_audio_from_video(media_path)
+                result = self.recognize_audio(audio_path, max_attempts)
+                
+                # 尝试删除临时音频文件
+                try:
+                    os.remove(audio_path)
+                except:
+                    logging.warning(f"无法删除临时音频文件: {audio_path}")
+                    
+                return result
+            else:
+                # 直接作为音频处理
+                return self.recognize_audio(media_path, max_attempts)
+        except Exception as e:
+            logging.error(f"媒体识别过程出错: {str(e)}")
+            return None

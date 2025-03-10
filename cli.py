@@ -11,119 +11,57 @@ def parse_args() -> Dict[str, Any]:
     Returns:
         包含解析后参数的字典
     """
+    defaults = get_default_args()
     parser = argparse.ArgumentParser(
-        description='批量将MP3音频转换为文本文件',
+        description='将媒体文件(音频或视频)转为文本',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     
-    # 必需参数
-    parser.add_argument(
-        '-i', '--input_folder', 
-        type=str, 
-        required=True,
-        help='输入MP3文件所在文件夹路径'
-    )
+    parser.add_argument('--media_folder', type=str, default=defaults['media_folder'],
+                        help='媒体文件所在文件夹，支持音频和视频')
+    parser.add_argument('--output_folder', type=str, default=defaults['output_folder'],
+                        help='输出结果文件夹')
+    parser.add_argument('--max_retries', type=int, default=defaults['max_retries'],
+                        help='最大重试次数')
+    parser.add_argument('--max_workers', type=int, default=defaults['max_workers'],
+                        help='线程池工作线程数')
+    parser.add_argument('--use_jianying_first', action='store_true', default=defaults['use_jianying_first'],
+                        help='是否优先使用剪映ASR')
+    parser.add_argument('--no_jianying_first', action='store_false', dest='use_jianying_first',
+                        help='不优先使用剪映ASR')
+    parser.add_argument('--use_kuaishou', action='store_true', default=defaults['use_kuaishou'],
+                        help='是否使用快手ASR')
+    parser.add_argument('--no_kuaishou', action='store_false', dest='use_kuaishou',
+                        help='不使用快手ASR')
+    parser.add_argument('--use_bcut', action='store_true', default=defaults['use_bcut'],
+                        help='是否使用B站ASR')
+    parser.add_argument('--no_bcut', action='store_false', dest='use_bcut',
+                        help='不使用B站ASR')
+    parser.add_argument('--format_text', action='store_true', default=defaults['format_text'],
+                        help='是否格式化输出文本')
+    parser.add_argument('--no_format', action='store_false', dest='format_text',
+                        help='不格式化输出文本')
+    parser.add_argument('--include_timestamps', action='store_true', default=defaults['include_timestamps'],
+                        help='在格式化文本中包含时间戳')
+    parser.add_argument('--no_timestamps', action='store_false', dest='include_timestamps',
+                        help='不在格式化文本中包含时间戳')
+    parser.add_argument('--show_progress', action='store_true', default=defaults['show_progress'],
+                        help='显示进度条')
+    parser.add_argument('--hide_progress', action='store_false', dest='show_progress',
+                        help='不显示进度条')
+    parser.add_argument('--process_video', action='store_true', default=defaults['process_video'],
+                        help='处理视频文件')
+    parser.add_argument('--ignore_video', action='store_false', dest='process_video',
+                        help='忽略视频文件')
+    parser.add_argument('--extract_audio_only', action='store_true', default=defaults['extract_audio_only'],
+                        help='仅提取音频而不处理成文本')
+    parser.add_argument('--video_extensions', nargs='+', default=defaults['video_extensions'],
+                        help='要处理的视频文件扩展名列表，如 .mp4 .mov .avi')
+    parser.add_argument('--log_mode', choices=['VERBOSE', 'NORMAL', 'QUIET'], default=defaults['log_mode'],
+                        help='日志级别：VERBOSE(详细)、NORMAL(正常)、QUIET(静默)')
     
-    parser.add_argument(
-        '-o', '--output_folder', 
-        type=str, 
-        required=True,
-        help='文本输出文件夹路径'
-    )
-    
-    # 可选参数 - 性能设置
-    performance_group = parser.add_argument_group('性能设置')
-    performance_group.add_argument(
-        '--max_workers', 
-        type=int, 
-        default=os.cpu_count() or 4,
-        help='并行处理的线程数'
-    )
-    
-    performance_group.add_argument(
-        '--max_retries', 
-        type=int, 
-        default=3,
-        help='识别失败时的最大重试次数'
-    )
-    
-    # 可选参数 - ASR服务设置
-    asr_group = parser.add_argument_group('ASR服务设置')
-    asr_group.add_argument(
-        '--use_jianying_first', 
-        action='store_true',
-        help='优先使用剪映ASR服务'
-    )
-    
-    asr_group.add_argument(
-        '--use_kuaishou', 
-        action='store_true',
-        help='启用快手ASR服务'
-    )
-    
-    asr_group.add_argument(
-        '--use_bcut', 
-        action='store_true',
-        help='启用必剪(B站)ASR服务'
-    )
-    
-    # 可选参数 - 输出格式设置
-    output_group = parser.add_argument_group('输出格式设置')
-    output_group.add_argument(
-        '--no_format_text', 
-        action='store_true',
-        help='不格式化输出文本'
-    )
-    
-    output_group.add_argument(
-        '--no_timestamps', 
-        action='store_true',
-        help='不在文本中包含时间戳'
-    )
-    
-    # 新增日志级别控制
-    log_group = parser.add_argument_group('日志和显示设置')
-    log_group.add_argument(
-        '--verbose', 
-        action='store_true',
-        help='显示详细日志'
-    )
-    
-    log_group.add_argument(
-        '--quiet', 
-        action='store_true',
-        help='静默模式，只显示警告和错误'
-    )
-    
-    log_group.add_argument(
-        '--no_progress', 
-        action='store_true',
-        help='不显示进度条'
-    )
-    
-    # 解析参数
     args = parser.parse_args()
-    
-    # 转换为字典并进行必要的转换
-    args_dict = vars(args)
-    
-    # 处理反向参数（--no_xxx 转为 xxx=False）
-    args_dict['format_text'] = not args_dict.pop('no_format_text')
-    args_dict['include_timestamps'] = not args_dict.pop('no_timestamps')
-    args_dict['show_progress'] = not args_dict.pop('no_progress')
-    
-    # 处理日志级别
-    log_mode = LogConfig.NORMAL
-    if args_dict.pop('verbose'):
-        log_mode = LogConfig.VERBOSE
-    elif args_dict.pop('quiet'):
-        log_mode = LogConfig.QUIET
-    args_dict['log_mode'] = log_mode
-    
-    # 重命名参数以符合函数命名
-    args_dict['mp3_folder'] = args_dict.pop('input_folder')
-    
-    return args_dict
+    return vars(args)  # 转换为字典
 
 def get_default_args() -> Dict[str, Any]:
     """
@@ -133,15 +71,18 @@ def get_default_args() -> Dict[str, Any]:
         包含默认参数的字典
     """
     return {
-        'mp3_folder': r"D:\download",
-        'output_folder': r"D:\download\dest",
+        'media_folder': './media',  # 更改为media_folder
+        'output_folder': './output',
         'max_retries': 3,
-        'max_workers': 6,
+        'max_workers': 4,
         'use_jianying_first': True,
         'use_kuaishou': True,
         'use_bcut': True,
         'format_text': True,
         'include_timestamps': True,
         'show_progress': True,
+        'process_video': True,  # 新增：是否处理视频文件
+        'video_extensions': ['.mp4', '.mov', '.avi'],  # 新增：视频文件扩展名
+        'extract_audio_only': False,  # 新增：仅提取音频不进行识别
         'log_mode': LogConfig.NORMAL
     }

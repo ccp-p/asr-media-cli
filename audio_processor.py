@@ -9,6 +9,8 @@ import signal
 from typing import Dict, List, Set, Tuple, Optional, Any, Callable
 from pathlib import Path
 from pydub import AudioSegment
+import subprocess
+from tqdm import tqdm
 
 # 导入工具函数
 from utils import format_time_duration, load_json_file, save_json_file, ProgressBar, LogConfig
@@ -21,38 +23,29 @@ from text_formatter import TextFormatter
 class AudioProcessor:
     """音频处理类，负责音频分割、转写和文本整合"""
     
-    def __init__(self, mp3_folder: str, output_folder: str, 
-                 max_retries: int = 3, max_workers: int = 4,
-                 use_jianying_first: bool = False, use_kuaishou: bool = False, 
-                 use_bcut: bool = False, format_text: bool = True,
-                 include_timestamps: bool = True, show_progress: bool = True):
+    def __init__(self, **kwargs):
         """
-        初始化音频处理器
+        音频处理器初始化
         
         Args:
-            mp3_folder: MP3文件所在文件夹
-            output_folder: 输出结果文件夹
-            max_retries: 最大重试次数
-            max_workers: 线程池工作线程数
-            use_jianying_first: 是否优先使用剪映ASR
-            use_kuaishou: 是否使用快手ASR
-            use_bcut: 是否使用B站ASR
-            format_text: 是否格式化输出文本以提高可读性
-            include_timestamps: 是否在格式化文本中包含时间戳
-            show_progress: 是否显示进度条
+            **kwargs: 配置参数
         """
-        self.mp3_folder = mp3_folder
-        self.output_folder = output_folder
-        self.max_retries = max_retries
-        self.max_workers = max_workers
-        self.use_jianying_first = use_jianying_first
-        self.use_kuaishou = use_kuaishou
-        self.use_bcut = use_bcut
-        self.format_text = format_text
-        self.include_timestamps = include_timestamps
-        self.show_progress = show_progress  # 新增进度条显示开关
+        # 从kwargs获取参数，若不存在则使用默认值
+        self.media_folder = kwargs.get('media_folder', './media')
+        self.output_folder = kwargs.get('output_folder', './output')
+        self.max_retries = kwargs.get('max_retries', 3)
+        self.max_workers = kwargs.get('max_workers', 4)
+        self.use_jianying_first = kwargs.get('use_jianying_first', True)
+        self.use_kuaishou = kwargs.get('use_kuaishou', True)
+        self.use_bcut = kwargs.get('use_bcut', True)
+        self.format_text = kwargs.get('format_text', True)
+        self.include_timestamps = kwargs.get('include_timestamps', True)
+        self.show_progress = kwargs.get('show_progress', True)
+        self.process_video = kwargs.get('process_video', True)
+        self.video_extensions = kwargs.get('video_extensions', ['.mp4', '.mov', '.avi'])
+        self.extract_audio_only = kwargs.get('extract_audio_only', False)
         
-        # 创建输出文件夹
+        # 创建输出目录
         os.makedirs(self.output_folder, exist_ok=True)
         
         # 记录文件路径
@@ -70,9 +63,9 @@ class AudioProcessor:
         
         # 初始化ASR服务管理器
         self.asr_manager = ASRManager(
-            use_jianying_first=use_jianying_first,
-            use_kuaishou=use_kuaishou,
-            use_bcut=use_bcut
+            use_jianying_first=self.use_jianying_first,
+            use_kuaishou=self.use_kuaishou,
+            use_bcut=self.use_bcut
         )
         
         # 进度条相关
@@ -392,6 +385,13 @@ class AudioProcessor:
                 future_to_failed = {
                     retry_executor.submit(self.recognize_audio, 
                                         os.path.join(self.temp_segments_dir, segment_file)): 
+                    (idx, segment_file)
+                    for idx, segment_file in failed_segments
+                }
+                
+                try:
+                    for future in concurrent.futures.as_completed(future_to_failed):
+                        if self.interrupt_received:
                     (idx, segment_file)
                     for idx, segment_file in failed_segments
                 }
