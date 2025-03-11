@@ -663,6 +663,9 @@ class AudioProcessor:
             if self.process_video:
                 video_files = [f for f in os.listdir(self.media_folder) 
                             if any(f.lower().endswith(ext) for ext in self.video_extensions)]
+                # 从json文件中读取数据，如果存在对应的mp3文件，则不再处理
+                video_files = [f for f in video_files if f.replace(".mp4", ".mp3") not in mp3_files
+                               and f.replace(".mov", ".mp3") not in mp3_files]
                 media_files.extend(video_files)
             
             if not media_files:
@@ -799,6 +802,7 @@ class AudioProcessor:
                 base_name = os.path.splitext(original_filename)[0]
                 output_path = os.path.join(self.output_folder, f"{base_name}.txt")
                 logging.info(f"转录完成: {output_path}")
+                os.remove(audio_path)  # 删除已处理的音频文件
             else:
                 logging.warning(f"转录失败: {original_filename}")
                 
