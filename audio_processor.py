@@ -44,7 +44,6 @@ class AudioProcessor:
         self.process_video = kwargs.get('process_video', True)
         self.video_extensions = kwargs.get('video_extensions', ['.mp4', '.mov', '.avi'])
         self.extract_audio_only = kwargs.get('extract_audio_only', False)
-        print('process_video', self.extract_audio_only)
         # 创建输出目录
         os.makedirs(self.output_folder, exist_ok=True)
         
