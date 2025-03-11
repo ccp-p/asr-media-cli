@@ -176,6 +176,14 @@ class AudioProcessor:
         progress_name = f"split_{filename}"
         
         def do_split():
+            # 确保临时目录存在
+            if not os.path.exists(self.temp_segments_dir):
+                logging.info(f"临时目录不存在，重新创建: {self.temp_segments_dir}")
+                os.makedirs(self.temp_segments_dir, exist_ok=True)
+                
+            logging.info(f"使用临时目录: {self.temp_segments_dir}")
+            
+            # 加载音频文件
             audio = AudioSegment.from_mp3(input_path)
             
             # 计算总时长（毫秒转秒）
@@ -211,13 +219,19 @@ class AudioProcessor:
                     f"导出片段 {i+1}/{expected_segments}"
                 )
                 
-                segment.export(
-                    output_path,
-                    format="wav",
-                    parameters=["-ac", "1", "-ar", "16000"]  # 单声道，16kHz采样率
-                )
-                segment_files.append(output_filename)
-                logging.debug(f"  ├─ 分割完成: {output_filename}")
+                # 导出音频段
+                try:
+                    logging.debug(f"  ├─ 导出片段到: {output_path}")
+                    segment.export(
+                        output_path,
+                        format="wav",
+                        parameters=["-ac", "1", "-ar", "16000"]  # 单声道，16kHz采样率
+                    )
+                    segment_files.append(output_filename)
+                    logging.debug(f"  ├─ 分割完成: {output_filename}")
+                except Exception as e:
+                    logging.error(f"  ├─ 导出片段失败: {output_path}, 错误: {str(e)}")
+                    raise
             
             # 完成进度条
             self.finish_progress(progress_name, f"完成 - {len(segment_files)} 个片段")
