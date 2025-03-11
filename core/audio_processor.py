@@ -12,13 +12,13 @@ from pydub import AudioSegment
 import subprocess
 from tqdm import tqdm
 
-# 导入工具函数
-from utils import format_time_duration, load_json_file, save_json_file, ProgressBar, LogConfig
+# 导入工具函数 - 使用相对导入
+from .utils import format_time_duration, load_json_file, save_json_file, ProgressBar, LogConfig
 
 # 导入ASR模块和ASR管理器
-from asr import ASRDataSeg
-from asr_manager import ASRManager
-from text_formatter import TextFormatter
+from .asr import ASRDataSeg
+from .asr_manager import ASRManager
+from .text_formatter import TextFormatter
 
 class AudioProcessor:
     """音频处理类，负责音频分割、转写和文本整合"""
@@ -375,7 +375,7 @@ class AudioProcessor:
                          if i not in segment_results]
         
         for retry_round in range(1, self.max_retries + 1):
-            if not failed_segments or self.interrupt_received:
+            if not failed_segments或self.interrupt_received:
                 break
                 
             logging.info(f"第 {retry_round} 轮重试 ({len(failed_segments)} 个片段):")

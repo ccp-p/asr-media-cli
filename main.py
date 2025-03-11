@@ -21,7 +21,7 @@ def check_dependencies():
         except ImportError:
             missing_modules.append((module, description))
     
-    if missing_modules:
+    if (missing_modules):
         print("\n缺少必要的依赖模块:")
         for module, description in missing_modules:
             print(f"  - {module}: {description}")
@@ -36,7 +36,7 @@ def check_dependencies():
     
     # 检查FFmpeg是否可用
     try:
-        from video_converter import check_ffmpeg_available
+        from core import check_ffmpeg_available
         if not check_ffmpeg_available():
             print("\n警告: 未检测到FFmpeg，转换TS格式视频需要FFmpeg支持")
             print("请安装FFmpeg: https://ffmpeg.org/download.html")
@@ -44,14 +44,8 @@ def check_dependencies():
     except ImportError:
         pass
 
-# 导入工具函数
-from utils import setup_logging
-
-# 导入AudioProcessor模块
-from audio_processor import AudioProcessor
-
-# 导入视频转换模块
-from video_converter import process_media_file
+# 从core包导入所需功能
+from core import setup_logging, AudioProcessor, process_media_file, start_file_watcher
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -103,9 +97,6 @@ def convert_media_to_txt(media_folder: str, output_folder: str, max_retries: int
     if watch_mode:
         try:
             # 如果启用监听模式，导入并使用file_watcher模块
-            from file_watcher import start_file_watcher
-            
-            # 启动文件监控
             observer = start_file_watcher(processor, media_folder)
             
             # 保持程序运行，直到用户中断
