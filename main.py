@@ -2,6 +2,7 @@ import os
 import sys
 import logging
 import traceback
+import time
 
 def check_dependencies():
     """检查所需依赖是否已安装"""
@@ -9,6 +10,7 @@ def check_dependencies():
         'tqdm': '进度条显示',
         'requests': '网络请求',
         'pydub': '音频处理',
+        'watchdog': '文件监控',
     }
     
     missing_modules = []
@@ -39,7 +41,7 @@ from utils import setup_logging
 from audio_processor import AudioProcessor
 
 # 配置日志
-logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # 设置代理(如需要)
 os.environ["HTTP_PROXY"] = "http://127.0.0.1:7890"
@@ -48,7 +50,8 @@ os.environ["HTTPS_PROXY"] = "http://127.0.0.1:7890"
 def convert_mp3_to_txt(mp3_folder: str, output_folder: str, max_retries: int = 3, 
                      max_workers: int = 4, use_jianying_first: bool = False, 
                      use_kuaishou: bool = False, use_bcut: bool = False,
-                     format_text: bool = True, include_timestamps: bool = True) -> None:
+                     format_text: bool = True, include_timestamps: bool = True,
+                     watch_mode: bool = False) -> None:
     """
     批量将MP3文件转为文本，使用ASR服务轮询
     
@@ -62,7 +65,9 @@ def convert_mp3_to_txt(mp3_folder: str, output_folder: str, max_retries: int = 3
         use_bcut: 是否使用B站ASR
         format_text: 是否格式化输出文本以提高可读性
         include_timestamps: 是否在格式化文本中包含时间戳
+        watch_mode: 是否启用监听模式，监控文件夹变动
     """
+    # 创建处理器
     processor = AudioProcessor(
         media_folder=mp3_folder,
         output_folder=output_folder,
@@ -75,7 +80,34 @@ def convert_mp3_to_txt(mp3_folder: str, output_folder: str, max_retries: int = 3
         include_timestamps=include_timestamps
     )
     
-    processor.process_all_files()
+    # 确保输出目录存在
+    os.makedirs(output_folder, exist_ok=True)
+    
+    if watch_mode:
+        try:
+            # 如果启用监听模式，导入并使用file_watcher模块
+            from file_watcher import start_file_watcher
+            
+            # 启动文件监控
+            observer = start_file_watcher(processor, mp3_folder)
+            
+            # 保持程序运行，直到用户中断
+            try:
+                while True:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                observer.stop()
+                observer.join()
+                print("\n文件监控已停止")
+                
+        except ImportError:
+            logging.error("无法导入file_watcher模块，请确保watchdog库已安装")
+            print("监控模式需要watchdog库支持，请运行: pip install watchdog")
+            # 降级为正常处理模式
+            processor.process_all_files()
+    else:
+        # 常规模式，处理所有文件
+        processor.process_all_files()
 
 
 if __name__ == "__main__":
@@ -94,7 +126,7 @@ if __name__ == "__main__":
             use_bcut = True,  # 设置为True表示优先使用B站ASR进行识别（优先级最高）
             format_text = True,  # 格式化输出文本，提高可读性
             include_timestamps = True,  # 在格式化文本中包含时间戳
-            
+            watch_mode = True,  # 设置为True启用监听模式，监控文件夹变动
         )
     except KeyboardInterrupt:
         logging.warning("\n程序已被用户中断")
