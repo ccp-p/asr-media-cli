@@ -64,7 +64,7 @@ def convert_mp3_to_txt(mp3_folder: str, output_folder: str, max_retries: int = 3
         include_timestamps: 是否在格式化文本中包含时间戳
     """
     processor = AudioProcessor(
-        mp3_folder=mp3_folder,
+        media_folder=mp3_folder,
         output_folder=output_folder,
         max_retries=max_retries,
         max_workers=max_workers,

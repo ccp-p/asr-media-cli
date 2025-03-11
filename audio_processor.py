@@ -10,24 +10,7 @@ from typing import Dict, List, Set, Tuple, Optional, Any, Callable
 from pathlib import Path
 from pydub import AudioSegment
 import subprocess
-
-# 尝试导入tqdm，如果不存在则使用内置进度显示
-try:
-    from tqdm import tqdm
-    TQDM_AVAILABLE = True
-except ImportError:
-    TQDM_AVAILABLE = False
-    # 创建一个简易的tqdm替代品
-    def tqdm(iterable, **kwargs):
-        total = kwargs.get('total', None)
-        desc = kwargs.get('desc', '')
-        if total:
-            print(f"\n{desc}: 开始处理 {total} 个项目...")
-        for i, item in enumerate(iterable):
-            if total and (i % max(1, total // 10) == 0 or i == total - 1):
-                print(f"{desc}: 已处理 {i+1}/{total} ({((i+1)/total)*100:.1f}%)")
-            yield item
-        print(f"{desc}: 处理完成!")
+from tqdm import tqdm
 
 # 导入工具函数
 from utils import format_time_duration, load_json_file, save_json_file, ProgressBar, LogConfig
@@ -61,7 +44,7 @@ class AudioProcessor:
         self.process_video = kwargs.get('process_video', True)
         self.video_extensions = kwargs.get('video_extensions', ['.mp4', '.mov', '.avi'])
         self.extract_audio_only = kwargs.get('extract_audio_only', False)
-        
+        print('process_video', self.extract_audio_only)
         # 创建输出目录
         os.makedirs(self.output_folder, exist_ok=True)
         
@@ -87,8 +70,6 @@ class AudioProcessor:
         
         # 进度条相关
         self.progress_bars: Dict[str, ProgressBar] = {}
-        # 是否使用tqdm
-        self.use_tqdm = TQDM_AVAILABLE and self.show_progress
     
     # 新增: 通用进度条管理方法
     def create_progress_bar(self, name: str, total: int, prefix: str, suffix: str = "") -> Optional[ProgressBar]:
@@ -646,6 +627,25 @@ class AudioProcessor:
             logging.error(f"❌ {filename} 处理失败: {str(e)}")
             # 确保进度条完成
             if file_progress:
+                self.finish_progress("file_progress", f"处理失败: {str(e)}")
+            return False
+    
+    def process_all_files(self) -> Tuple[int, float]:
+        """
+        处理所有媒体文件（音频和视频）
+        
+        Returns:
+            (处理文件数, 总耗时)
+        """
+        # 记录总体开始时间
+        total_start_time = time.time()
+        
+        try:
+            # 设置信号处理
+            signal.signal(signal.SIGINT, self.handle_interrupt)
+            
+            # 检查网络连接
+            try:
                 logging.info("检查网络连接...")
                 status_code = requests.get("https://www.google.com").status_code
                 logging.info(f"网络连接状态: {status_code}")
@@ -783,17 +783,41 @@ class AudioProcessor:
             audio_path: 音频文件路径
             original_filename: 原始文件名
         """
-        # 这里应实现ASR转录逻辑
-        # 由于原代码未提供，此处仅创建示例功能框架
-        base_name = os.path.splitext(original_filename)[0]
-        output_path = os.path.join(self.output_folder, f"{base_name}.txt")
-        
-        logging.info(f"开始转录: {original_filename}")
-        
-        # 这里应该实现实际的ASR请求逻辑
-        # ASR转录结果处理，格式化输出等
-        
-        logging.info(f"转录完成: {output_path}")
+        # 如果文件已经处理过且不是中断状态，则跳过
+        if audio_path in self.processed_files and not self.processed_files[audio_path].get('interrupted', False):
+            logging.info(f"跳过已处理的文件: {original_filename}")
+            return
+            
+        try:
+            # 记录开始处理
+            logging.info(f"开始转录音频: {original_filename}")
+            
+            # 调用单文件处理方法
+            success = self.process_single_file(audio_path)
+            
+            # 打印处理结果
+            if success:
+                base_name = os.path.splitext(original_filename)[0]
+                output_path = os.path.join(self.output_folder, f"{base_name}.txt")
+                logging.info(f"转录完成: {output_path}")
+            else:
+                logging.warning(f"转录失败: {original_filename}")
+                
+        except Exception as e:
+            # 处理异常
+            logging.error(f"转录音频时发生错误: {original_filename} - {str(e)}")
+            
+            # 记录失败状态
+            self.processed_files[audio_path] = {
+                "processed_time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "status": "failed",
+                "error": str(e)
+            }
+            self._save_processed_records()
+            
+            # 如果是中断信号
+            if self.interrupt_received:
+                logging.warning(f"转录被用户中断: {original_filename}")
     
     def print_statistics(self, processed_files_count: int, total_duration: float):
         """打印处理统计信息"""

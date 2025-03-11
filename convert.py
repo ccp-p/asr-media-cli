@@ -28,6 +28,7 @@ def process_media_to_txt(**kwargs) -> None:
             process_video: 是否处理视频文件
             video_extensions: 要处理的视频文件扩展名列表，默认为['.mp4', '.mov', '.avi']
             extract_audio_only: 是否仅提取音频而不处理成文本
+            keep_extracted_audio: 是否保留从视频中提取的音频文件
             log_mode: 日志级别 (VERBOSE/NORMAL/QUIET)
     """
     # 设置代理(如需要)
