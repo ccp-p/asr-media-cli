@@ -310,6 +310,22 @@ class AudioProcessor:
         
         return full_text
     
+    def save_result_text(self, full_text: str, filename: str) -> str:
+        """
+        保存转写结果到文本文件
+        
+        Args:
+            full_text: 要保存的文本内容
+            filename: 音频文件名
+            
+        Returns:
+            保存的输出文件路径
+        """
+        output_file = os.path.join(self.output_folder, filename.replace(".mp3", ".txt"))
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write(full_text)
+        return output_file
+
     def process_single_file(self, input_path: str) -> bool:
         """
         处理单个音频文件
@@ -362,9 +378,7 @@ class AudioProcessor:
             full_text = self.prepare_result_text(segment_files, segment_results)
             
             # 保存结果到文件
-            output_file = os.path.join(self.output_folder, filename.replace(".mp3", ".txt"))
-            with open(output_file, 'w', encoding='utf-8') as f:
-                f.write(full_text)
+            output_file = self.save_result_text(full_text, filename)
             
             # 计算并显示单个文件处理时长
             file_duration = time.time() - file_start_time
@@ -653,7 +667,23 @@ class AudioProcessor:
         """清理临时文件和资源"""
         logging.info("开始清理临时文件和资源...")
         
-        # 1. 确保ASR管理器资源被释放
+        # 关闭ASR管理器资源
+        self._close_asr_resources()
+        
+        # 关闭所有未完成的进度条
+        self._close_progress_bars()
+        
+        # 清理临时目录
+        self._cleanup_temp_directory()
+        
+        # 显示退出消息
+        self._show_exit_message()
+        
+        # 最终的结束日志
+        logging.info("=== 程序执行结束 ===")
+
+    def _close_asr_resources(self):
+        """关闭ASR管理器资源"""
         if hasattr(self, 'asr_manager'):
             logging.info("关闭ASR管理器资源...")
             try:
@@ -663,17 +693,19 @@ class AudioProcessor:
                 logging.info("ASR管理器资源已关闭")
             except Exception as e:
                 logging.warning(f"关闭ASR管理器资源时出错: {str(e)}")
-        
-        # 2. 关闭所有未完成的进度条
+    
+    def _close_progress_bars(self):
+        """关闭所有未完成的进度条"""
         if hasattr(self, 'progress_manager'):
             self.progress_manager.close_all_progress_bars("已终止")
-        
-        # 3. 使用超时机制清理临时文件
+    
+    def _cleanup_temp_directory(self):
+        """清理临时目录"""
         try:
             logging.info(f"开始清理临时目录: {self.temp_dir}")
             
             # 检查目录是否存在
-            if os.path.exists(self.temp_dir):
+            if (os.path.exists(self.temp_dir)):
                 # 使用单独的线程进行清理以避免阻塞
                 def remove_temp_dir():
                     try:
@@ -702,8 +734,10 @@ class AudioProcessor:
                 
         except Exception as e:
             logging.warning(f"⚠️ 清理临时文件失败: {str(e)}")
-        
-        # 4. 根据中断状态显示不同消息
+    
+    def _show_exit_message(self):
+        """显示退出消息"""
+        # 根据中断状态显示不同消息
         if self.interrupt_received:
             logging.info("\n程序已安全终止，已保存处理进度。您可以稍后继续处理剩余文件。")
         else:
