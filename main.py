@@ -96,6 +96,10 @@ def convert_media_to_txt(media_folder: str, output_folder: str, max_retries: int
     
     if watch_mode:
         try:
+            # 记录开始监听时间
+            watch_start_time = time.time()
+            processed_files_count = 0
+            
             # 如果启用监听模式，导入并使用file_watcher模块
             observer = start_file_watcher(processor, media_folder)
             
@@ -107,6 +111,13 @@ def convert_media_to_txt(media_folder: str, output_folder: str, max_retries: int
                 observer.stop()
                 observer.join()
                 print("\n文件监控已停止")
+                
+                # 计算监听总时长
+                total_duration = time.time() - watch_start_time
+                
+                # 打印ASR服务使用统计信息
+                logging.info("\n监听模式结束，显示ASR服务使用统计:")
+                processor.print_statistics(processed_files_count, total_duration)
                 
         except ImportError:
             logging.error("无法导入file_watcher模块，请确保watchdog库已安装")

@@ -282,58 +282,162 @@ class AudioProcessor:
                 prefix="识别进度", 
                 suffix=f"0/{len(segment_files)} 片段完成"
             )
+        
+        # 跟踪任务开始时间和最大执行时间
+        task_start_times = {}
+        MAX_TASK_TIME = 60  # 最大任务执行时间(秒)
+        PROGRESS_UPDATE_INTERVAL = 2  # 进度更新间隔(秒)
+        STALLED_CHECK_INTERVAL = 10  # 卡住任务检查间隔(秒)
+        
+        # 记录总体开始时间，设置总超时
+        overall_start_time = time.time()
+        OVERALL_TIMEOUT = max(len(segment_files) * 10, 300)  # 总超时时间(秒)，至少5分钟
             
         # 使用线程池并行处理音频片段
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             # 创建任务字典，映射片段索引和对应的Future对象
-            future_to_segment = {
-                executor.submit(self.recognize_audio, os.path.join(self.temp_segments_dir, segment_file)): 
-                (i, segment_file)
-                for i, segment_file in enumerate(segment_files)
-            }
-            
+            future_to_segment = {}
+            for i, segment_file in enumerate(segment_files):
+                future = executor.submit(self.recognize_audio, 
+                                        os.path.join(self.temp_segments_dir, segment_file))
+                future_to_segment[future] = (i, segment_file)
+                task_start_times[future] = time.time()
+                
             # 收集结果，并添加中断检查
             try:
                 completed_count = 0
-                for future in concurrent.futures.as_completed(future_to_segment):
-                    if self.interrupt_received:
-                        logging.warning("检测到中断，正在取消剩余任务...")
-                        executor.shutdown(wait=False, cancel_futures=True)
+                active_futures = list(future_to_segment.keys())
+                last_progress_update = time.time()
+                last_stalled_check = time.time()
+                
+                # 只要还有活动任务且未收到中断信号且未超时
+                while active_futures and not self.interrupt_received:
+                    # 检查总体超时
+                    if time.time() - overall_start_time > OVERALL_TIMEOUT:
+                        logging.warning(f"ASR处理总时间超过 {OVERALL_TIMEOUT}秒，强制终止剩余任务")
+                        for future in active_futures:
+                            future.cancel()
                         break
-                        
-                    i, segment_file = future_to_segment[future]
-                    try:
-                        text = future.result(timeout=60)  # 添加超时以避免无限等待
-                        completed_count += 1
-                        
-                        if text:
-                            segment_results[i] = text
-                            status_text = f"{completed_count}/{len(segment_files)} 片段完成 (成功识别 {len(segment_results)})"
-                            logging.debug(f"  ├─ 成功识别: {segment_file}")
-                        else:
-                            status_text = f"{completed_count}/{len(segment_files)} 片段完成 (失败 {completed_count - len(segment_results)})"
-                            logging.warning(f"  ├─ 识别失败: {segment_file}")
-                        
-                        # 更新进度条
-                        if recognize_progress:
-                            recognize_progress.update(completed_count, status_text)
+                    
+                    # 等待任意任务完成，带短超时
+                    done_futures, active_futures = concurrent.futures.wait(
+                        active_futures, 
+                        timeout=1.0,
+                        return_when=concurrent.futures.FIRST_COMPLETED
+                    )
+                    
+                    # 处理已完成的任务
+                    for future in done_futures:
+                        if self.interrupt_received:
+                            break
                             
-                    except concurrent.futures.TimeoutError:
+                        i, segment_file = future_to_segment[future]
                         completed_count += 1
-                        logging.warning(f"  ├─ 识别超时: {segment_file}")
-                        if recognize_progress:
-                            recognize_progress.update(
-                                completed_count, 
-                                f"{completed_count}/{len(segment_files)} 片段完成 (超时 {segment_file})"
-                            )
-                    except Exception as exc:
-                        completed_count += 1
-                        logging.error(f"  ├─ 识别出错: {segment_file} - {str(exc)}")
-                        if recognize_progress:
-                            recognize_progress.update(
-                                completed_count, 
-                                f"{completed_count}/{len(segment_files)} 片段完成 (错误)"
-                            )
+                        
+                        try:
+                            # 使用较短的超时时间获取结果
+                            text = future.result(timeout=3)
+                            
+                            if text:
+                                segment_results[i] = text
+                                status_text = f"{completed_count}/{len(segment_files)} 片段完成 (成功识别 {len(segment_results)})"
+                                logging.debug(f"  ├─ 成功识别: {segment_file}")
+                            else:
+                                status_text = f"{completed_count}/{len(segment_files)} 片段完成 (失败 {completed_count - len(segment_results)})"
+                                logging.warning(f"  ├─ 识别失败: {segment_file}")
+                            
+                            # 更新进度条
+                            if recognize_progress:
+                                recognize_progress.update(completed_count, status_text)
+                                
+                        except concurrent.futures.TimeoutError:
+                            logging.warning(f"  ├─ 识别结果获取超时: {segment_file}")
+                            if recognize_progress:
+                                recognize_progress.update(
+                                    completed_count, 
+                                    f"{completed_count}/{len(segment_files)} 片段完成 (超时 {segment_file})"
+                                )
+                        except Exception as exc:
+                            logging.error(f"  ├─ 识别出错: {segment_file} - {str(exc)}")
+                            if recognize_progress:
+                                recognize_progress.update(
+                                    completed_count, 
+                                    f"{completed_count}/{len(segment_files)} 片段完成 (错误)"
+                                )
+                        
+                        # 清理任务计时器
+                        if future in task_start_times:
+                            del task_start_times[future]
+                    
+                    # 周期性更新进度条，即使没有任务完成
+                    current_time = time.time()
+                    if current_time - last_progress_update > PROGRESS_UPDATE_INTERVAL and recognize_progress:
+                        last_progress_update = current_time
+                        recognize_progress.update(
+                            completed_count,
+                            f"{completed_count}/{len(segment_files)} 片段完成，{len(active_futures)} 个处理中..."
+                        )
+                    
+                    # 周期性检查卡住的任务
+                    if current_time - last_stalled_check > STALLED_CHECK_INTERVAL:
+                        last_stalled_check = current_time
+                        stalled_tasks = []
+                        
+                        # 检查所有活动任务是否运行时间过长
+                        for future in list(active_futures):
+                            if future in task_start_times:
+                                task_time = current_time - task_start_times[future]
+                                if task_time > MAX_TASK_TIME:
+                                    i, segment_file = future_to_segment[future]
+                                    logging.warning(f"任务 {segment_file} 执行超过 {MAX_TASK_TIME}秒，强制取消")
+                                    stalled_tasks.append((future, i, segment_file))
+                        
+                        # 处理卡住的任务
+                        for future, i, segment_file in stalled_tasks:
+                            # 取消任务
+                            future.cancel()
+                            
+                            # 从活跃列表中删除该任务
+                            if future in active_futures:
+                                active_futures.remove(future)
+                            
+                            # 更新完成数量
+                            completed_count += 1
+                            
+                            # 更新进度条
+                            if recognize_progress:
+                                recognize_progress.update(
+                                    completed_count,
+                                    f"{completed_count}/{len(segment_files)} 片段完成 (强制取消卡住任务)"
+                                )
+                            
+                            # 清理任务计时器
+                            if future in task_start_times:
+                                del task_start_times[future]
+                    
+                    # 如果只剩少量任务且已接近总超时，强制结束
+                    remaining_ratio = len(active_futures) / len(segment_files)
+                    time_ratio = (time.time() - overall_start_time) / OVERALL_TIMEOUT
+                    if remaining_ratio < 0.05 and time_ratio > 0.8:  # 剩余不到5%的任务且已用时超过80%
+                        logging.warning(f"只剩余 {len(active_futures)} 个任务但执行时间过长，强制完成...")
+                        for future in list(active_futures):
+                            future.cancel()
+                            i, segment_file = future_to_segment[future]
+                            logging.warning(f"强制取消卡住的尾部任务: {segment_file}")
+                            completed_count += 1
+                        active_futures = []
+                    
+                    # 避免CPU占用过高
+                    if not done_futures:
+                        time.sleep(0.1)
+                        
+                # 如果因为中断或超时跳出循环，取消剩余任务
+                if active_futures:
+                    reason = "中断" if self.interrupt_received else "总超时"
+                    logging.warning(f"检测到{reason}，正在取消剩余 {len(active_futures)} 个任务...")
+                    for future in active_futures:
+                        future.cancel()
+                        
             except KeyboardInterrupt:
                 logging.warning("检测到用户中断，正在取消剩余任务...")
                 executor.shutdown(wait=False, cancel_futures=True)
