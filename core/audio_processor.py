@@ -20,6 +20,7 @@ from .asr import ASRDataSeg
 from .asr_manager import ASRManager
 from .text_formatter import TextFormatter
 from .progress_manager import ProgressManager
+from .audio_splitter import AudioSplitter
 
 class AudioProcessor:
     """音频处理类，负责音频分割、转写和文本整合"""
@@ -70,6 +71,9 @@ class AudioProcessor:
         
         # 初始化进度条管理器
         self.progress_manager = ProgressManager(show_progress=self.show_progress)
+        
+        # 初始化音频分割器
+        self.audio_splitter = AudioSplitter(self.temp_segments_dir)
         
     # 使用ProgressManager替换原有的进度条方法
     def create_progress_bar(self, name: str, total: int, prefix: str, suffix: str = "") -> Optional[ProgressBar]:
@@ -135,79 +139,38 @@ class AudioProcessor:
             分割后的片段文件列表
         """
         filename = os.path.basename(input_path)
-        logging.info(f"正在分割 {filename} 为小片段...")
         
         # 创建进度条，但先不更新
         progress_name = f"split_{filename}"
+        self.create_progress_bar(
+            progress_name,
+            total=100,  # 临时设置，将在回调中更新
+            prefix=f"分割 {filename}", 
+            suffix="准备中"
+        )
         
-        def do_split():
-            # 确保临时目录存在
-            if not os.path.exists(self.temp_segments_dir):
-                logging.info(f"临时目录不存在，重新创建: {self.temp_segments_dir}")
-                os.makedirs(self.temp_segments_dir, exist_ok=True)
-                
-            logging.info(f"使用临时目录: {self.temp_segments_dir}")
+        # 定义进度回调函数
+        def progress_callback(current: int, total: int, message: str):
+            # 第一次调用时更新进度条总数
+            if current == 0 and hasattr(self, "progress_manager") and progress_name in self.progress_manager.progress_bars:
+                self.progress_manager.progress_bars[progress_name].total = total
             
-            # 加载音频文件
-            audio = AudioSegment.from_mp3(input_path)
+            self.update_progress(progress_name, current, message)
             
-            # 计算总时长（毫秒转秒）
-            total_duration = len(audio) // 1000
-            logging.info(f"音频总时长: {total_duration}秒")
-            
-            # 预计片段数
-            expected_segments = (total_duration + segment_length - 1) // segment_length
-            
-            # 创建分割进度条
-            self.create_progress_bar(
-                progress_name,
-                total=expected_segments, 
-                prefix=f"分割 {filename}", 
-                suffix="准备中"
-            )
-            
-            segment_files = []
-            
-            # 分割音频
-            for i, start in enumerate(range(0, total_duration, segment_length)):
-                end = min(start + segment_length, total_duration)
-                segment = audio[start*1000:end*1000]
-                
-                # 导出为WAV格式（兼容语音识别API）
-                output_filename = f"{os.path.splitext(filename)[0]}_part{i+1:03d}.wav"
-                output_path = os.path.join(self.temp_segments_dir, output_filename)
-                
-                # 更新进度条
-                self.update_progress(
-                    progress_name, 
-                    i, 
-                    f"导出片段 {i+1}/{expected_segments}"
-                )
-                
-                # 导出音频段
-                try:
-                    logging.debug(f"  ├─ 导出片段到: {output_path}")
-                    segment.export(
-                        output_path,
-                        format="wav",
-                        parameters=["-ac", "1", "-ar", "16000"]  # 单声道，16kHz采样率
-                    )
-                    segment_files.append(output_filename)
-                    logging.debug(f"  ├─ 分割完成: {output_filename}")
-                except Exception as e:
-                    logging.error(f"  ├─ 导出片段失败: {output_path}, 错误: {str(e)}")
-                    raise
-            
-            # 完成进度条
-            self.finish_progress(progress_name, f"完成 - {len(segment_files)} 个片段")
-            
-            return segment_files
+            # 如果是结束消息，完成进度条
+            if current >= total:
+                self.finish_progress(progress_name, message)
+        
+        # 设置音频分割器的回调
+        self.audio_splitter.progress_callback = progress_callback
         
         # 使用安全执行器处理错误
         result = self.safe_execute(
-            do_split, 
+            self.audio_splitter.split_audio_file,
             error_msg=f"分割音频文件 {filename} 失败",
-            progress_name=progress_name
+            progress_name=progress_name,
+            input_path=input_path,
+            segment_length=segment_length
         )
         
         return result or []
@@ -798,65 +761,46 @@ class AudioProcessor:
         Returns:
             tuple: (音频文件路径, 是否是新提取的), 失败则返回(None, False)
         """
-        try:
-            video_filename = os.path.basename(video_path)
-            base_name = os.path.splitext(video_filename)[0]
-            audio_path = os.path.join(self.output_folder, f"{base_name}.mp3")
-            
-            # 检查音频文件是否已经存在
-            if os.path.exists(audio_path):
-                # 检查是否在已处理记录中
-                if audio_path in self.processed_files:
-                    # 如果不是中断状态，则直接返回现有音频路径
-                    if not self.processed_files[audio_path].get('interrupted', False):
-                        logging.info(f"音频已存在且已处理: {audio_path}")
-                        return audio_path, False
-                else:
-                    logging.info(f"音频已存在但未记录处理: {audio_path}")
+        video_filename = os.path.basename(video_path)
+        base_name = os.path.splitext(video_filename)[0]
+        audio_path = os.path.join(self.output_folder, f"{base_name}.mp3")
+        
+        # 检查音频文件是否已经存在且在处理记录中
+        if os.path.exists(audio_path):
+            # 检查是否在已处理记录中
+            if audio_path in self.processed_files:
+                # 如果不是中断状态，则直接返回现有音频路径
+                if not self.processed_files[audio_path].get('interrupted', False):
+                    logging.info(f"音频已存在且已处理: {audio_path}")
                     return audio_path, False
-            
-            # 创建进度条
-            progress_name = f"extract_{video_filename}"
-            self.create_progress_bar(
-                progress_name,
-                total=1,
-                prefix=f"提取音频 {video_filename}",
-                suffix="准备中"
-            )
-            
-            # 使用FFmpeg提取音频
-            cmd = [
-                'ffmpeg', '-i', video_path, 
-                '-q:a', '0', '-map', 'a', audio_path, 
-                '-y'  # 覆盖已存在的文件
-            ]
-            
-            logging.info(f"正在从视频提取音频: {video_filename}")
-            self.update_progress(progress_name, 0, "提取中...")
-            
-            # 执行命令
-            process = subprocess.run(cmd, check=True, capture_output=True)
-            
-            if os.path.exists(audio_path):
-                logging.info(f"音频提取成功: {audio_path}")
-                self.finish_progress(progress_name, "提取完成")
-                return audio_path, True
             else:
-                logging.error(f"音频提取失败: {video_filename}")
-                self.finish_progress(progress_name, "提取失败")
-                return None, False
-                
-        except subprocess.CalledProcessError as e:
-            logging.error(f"FFmpeg处理失败: {e}")
-            if 'progress_name' in locals():
-                self.finish_progress(progress_name, f"处理失败: FFmpeg错误")
-            return None, False
-        except Exception as e:
-            logging.error(f"提取音频时发生错误: {str(e)}")
-            if 'progress_name' in locals():
-                self.finish_progress(progress_name, f"处理失败: {str(e)}")
-            return None, False
-
+                logging.info(f"音频已存在但未记录处理: {audio_path}")
+                return audio_path, False
+        
+        # 创建进度条
+        progress_name = f"extract_{video_filename}"
+        self.create_progress_bar(
+            progress_name,
+            total=1,
+            prefix=f"提取音频 {video_filename}",
+            suffix="准备中"
+        )
+        
+        # 定义进度回调函数
+        def progress_callback(current: int, total: int, message: str):
+            self.update_progress(progress_name, current, message)
+            
+            # 如果是结束消息，完成进度条
+            if current >= total:
+                self.finish_progress(progress_name, message)
+        
+        # 使用音频分割器提取音频
+        return self.audio_splitter.extract_audio_from_video(
+            video_path, 
+            self.output_folder, 
+            progress_callback
+        )
+    
     def process_file(self, filename):
         """
         处理单个媒体文件
