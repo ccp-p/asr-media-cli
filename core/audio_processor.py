@@ -915,11 +915,68 @@ class AudioProcessor:
     
     def cleanup(self):
         """清理临时文件和资源"""
+        logging.info("开始清理临时文件和资源...")
+        
+        # 1. 确保ASR管理器资源被释放
+        if hasattr(self, 'asr_manager'):
+            logging.info("关闭ASR管理器资源...")
+            try:
+                # 如果ASR管理器有close方法则调用，否则跳过
+                if hasattr(self.asr_manager, 'close') and callable(getattr(self.asr_manager, 'close')):
+                    self.asr_manager.close()
+                logging.info("ASR管理器资源已关闭")
+            except Exception as e:
+                logging.warning(f"关闭ASR管理器资源时出错: {str(e)}")
+        
+        # 2. 关闭所有未完成的进度条
+        if hasattr(self, 'progress_bars') and self.progress_bars:
+            logging.info(f"关闭 {len(self.progress_bars)} 个未完成的进度条...")
+            for name, bar in list(self.progress_bars.items()):
+                try:
+                    self.finish_progress(name, "已终止")
+                except Exception as e:
+                    logging.warning(f"关闭进度条 '{name}' 时出错: {str(e)}")
+        
+        # 3. 使用超时机制清理临时文件
         try:
-            shutil.rmtree(self.temp_dir, ignore_errors=True)
-            logging.info(f"✓ 临时文件已清理: {self.temp_dir}")
+            logging.info(f"开始清理临时目录: {self.temp_dir}")
+            
+            # 检查目录是否存在
+            if os.path.exists(self.temp_dir):
+                # 使用单独的线程进行清理以避免阻塞
+                def remove_temp_dir():
+                    try:
+                        shutil.rmtree(self.temp_dir, ignore_errors=True)
+                    except Exception as e:
+                        logging.warning(f"清理线程中出错: {str(e)}")
+                
+                # 创建清理线程
+                import threading
+                cleanup_thread = threading.Thread(target=remove_temp_dir, daemon=True)
+                cleanup_thread.start()
+                
+                # 等待最多5秒
+                cleanup_thread.join(timeout=5.0)
+                
+                # 检查是否成功删除
+                if not cleanup_thread.is_alive():
+                    if not os.path.exists(self.temp_dir):
+                        logging.info(f"✓ 临时目录已成功删除: {self.temp_dir}")
+                    else:
+                        logging.warning(f"⚠️ 临时目录可能未完全删除: {self.temp_dir}")
+                else:
+                    logging.warning(f"⚠️ 清理临时目录超时，将继续执行（临时文件可能未完全删除）")
+            else:
+                logging.info(f"临时目录不存在，无需清理: {self.temp_dir}")
+                
         except Exception as e:
             logging.warning(f"⚠️ 清理临时文件失败: {str(e)}")
         
+        # 4. 根据中断状态显示不同消息
         if self.interrupt_received:
             logging.info("\n程序已安全终止，已保存处理进度。您可以稍后继续处理剩余文件。")
+        else:
+            logging.info("\n程序已完成所有任务并安全退出。")
+        
+        # 5. 最终的结束日志
+        logging.info("=== 程序执行结束 ===")
