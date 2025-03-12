@@ -719,6 +719,75 @@ class AudioProcessor:
             # 清理临时文件
             self.cleanup()
     
+    def extract_audio_from_video(self, video_path):
+        """
+        从视频文件中提取音频
+        
+        Args:
+            video_path: 视频文件路径
+            
+        Returns:
+            tuple: (音频文件路径, 是否是新提取的), 失败则返回(None, False)
+        """
+        try:
+            video_filename = os.path.basename(video_path)
+            base_name = os.path.splitext(video_filename)[0]
+            audio_path = os.path.join(self.output_folder, f"{base_name}.mp3")
+            
+            # 检查音频文件是否已经存在
+            if os.path.exists(audio_path):
+                # 检查是否在已处理记录中
+                if audio_path in self.processed_files:
+                    # 如果不是中断状态，则直接返回现有音频路径
+                    if not self.processed_files[audio_path].get('interrupted', False):
+                        logging.info(f"音频已存在且已处理: {audio_path}")
+                        return audio_path, False
+                else:
+                    logging.info(f"音频已存在但未记录处理: {audio_path}")
+                    return audio_path, False
+            
+            # 创建进度条
+            progress_name = f"extract_{video_filename}"
+            self.create_progress_bar(
+                progress_name,
+                total=1,
+                prefix=f"提取音频 {video_filename}",
+                suffix="准备中"
+            )
+            
+            # 使用FFmpeg提取音频
+            cmd = [
+                'ffmpeg', '-i', video_path, 
+                '-q:a', '0', '-map', 'a', audio_path, 
+                '-y'  # 覆盖已存在的文件
+            ]
+            
+            logging.info(f"正在从视频提取音频: {video_filename}")
+            self.update_progress(progress_name, 0, "提取中...")
+            
+            # 执行命令
+            process = subprocess.run(cmd, check=True, capture_output=True)
+            
+            if os.path.exists(audio_path):
+                logging.info(f"音频提取成功: {audio_path}")
+                self.finish_progress(progress_name, "提取完成")
+                return audio_path, True
+            else:
+                logging.error(f"音频提取失败: {video_filename}")
+                self.finish_progress(progress_name, "提取失败")
+                return None, False
+                
+        except subprocess.CalledProcessError as e:
+            logging.error(f"FFmpeg处理失败: {e}")
+            if 'progress_name' in locals():
+                self.finish_progress(progress_name, f"处理失败: FFmpeg错误")
+            return None, False
+        except Exception as e:
+            logging.error(f"提取音频时发生错误: {str(e)}")
+            if 'progress_name' in locals():
+                self.finish_progress(progress_name, f"处理失败: {str(e)}")
+            return None, False
+
     def process_file(self, filename):
         """
         处理单个媒体文件
@@ -732,11 +801,23 @@ class AudioProcessor:
         # 处理视频文件 - 需要先提取音频
         if file_extension in self.video_extensions:
             logging.info(f"处理视频文件: {filename}")
-            audio_path = self.extract_audio_from_video(file_path)
+            
+            # 检查对应的mp3文件是否已在处理记录中且已完成
+            base_name = os.path.splitext(filename)[0]
+            mp3_path = os.path.join(self.output_folder, f"{base_name}.mp3")
+            if mp3_path in self.processed_files and not self.processed_files[mp3_path].get('interrupted', False):
+                logging.info(f"跳过已处理的视频: {filename}")
+                return
+                
+            # 提取音频
+            audio_path, is_new = self.extract_audio_from_video(file_path)
             
             # 如果只需要提取音频，到此为止
             if self.extract_audio_only:
-                logging.info(f"已提取音频: {audio_path}")
+                if is_new:
+                    logging.info(f"已提取音频: {audio_path}")
+                else:
+                    logging.info(f"已存在音频: {audio_path}")
                 return
                 
             # 继续处理提取出的音频文件
@@ -747,50 +828,16 @@ class AudioProcessor:
         
         # 处理音频文件
         elif file_extension == '.mp3':
+            # 检查是否已处理
+            if file_path in self.processed_files and not self.processed_files[file_path].get('interrupted', False):
+                logging.info(f"跳过已处理的音频: {filename}")
+                return
+                
             logging.info(f"处理音频文件: {filename}")
             self.transcribe_audio(file_path, filename)
         
         else:
             logging.warning(f"不支持的文件类型: {filename}")
-    
-    def extract_audio_from_video(self, video_path):
-        """
-        从视频文件中提取音频
-        
-        Args:
-            video_path: 视频文件路径
-            
-        Returns:
-            str: 提取的音频文件路径，失败则返回None
-        """
-        try:
-            video_filename = os.path.basename(video_path)
-            base_name = os.path.splitext(video_filename)[0]
-            audio_path = os.path.join(self.output_folder, f"{base_name}.mp3")
-            
-            # 使用FFmpeg提取音频
-            cmd = [
-                'ffmpeg', '-i', video_path, 
-                '-q:a', '0', '-map', 'a', audio_path, 
-                '-y'  # 覆盖已存在的文件
-            ]
-            
-            logging.info(f"正在从视频提取音频: {video_filename}")
-            subprocess.run(cmd, check=True, capture_output=True)
-            
-            if os.path.exists(audio_path):
-                logging.info(f"音频提取成功: {audio_path}")
-                return audio_path
-            else:
-                logging.error(f"音频提取失败: {video_filename}")
-                return None
-                
-        except subprocess.CalledProcessError as e:
-            logging.error(f"FFmpeg处理失败: {e}")
-            return None
-        except Exception as e:
-            logging.error(f"提取音频时发生错误: {str(e)}")
-            return None
     
     def transcribe_audio(self, audio_path, original_filename):
         """
@@ -800,8 +847,14 @@ class AudioProcessor:
             audio_path: 音频文件路径
             original_filename: 原始文件名
         """
-        # 如果文件已经处理过且不是中断状态，则跳过
-        if audio_path in self.processed_files and not self.processed_files[audio_path].get('interrupted', False):
+        # 生成输出文本文件路径
+        base_name = os.path.splitext(original_filename)[0]
+        output_path = os.path.join(self.output_folder, f"{base_name}.txt")
+        
+        # 如果输出文件已存在且文件已经处理过且不是中断状态，则跳过
+        if (os.path.exists(output_path) and 
+            audio_path in self.processed_files and 
+            not self.processed_files[audio_path].get('interrupted', False)):
             logging.info(f"跳过已处理的文件: {original_filename}")
             return
             
@@ -814,10 +867,13 @@ class AudioProcessor:
             
             # 打印处理结果
             if success:
-                base_name = os.path.splitext(original_filename)[0]
-                output_path = os.path.join(self.output_folder, f"{base_name}.txt")
-                logging.info(f"转录完成: {output_path}, 删除音频文件: {audio_path}")
-                os.remove(audio_path)  # 删除已处理的音频文件
+                logging.info(f"转录完成: {output_path}")
+                
+                # 如果是从视频提取的音频，删除音频文件以节省空间
+                video_extensions = [ext for ext in self.video_extensions if original_filename.lower().endswith(ext)]
+                if video_extensions and os.path.exists(audio_path):
+                    logging.info(f"删除提取的音频文件: {audio_path}")
+                    os.remove(audio_path)  # 删除已处理的音频文件
             else:
                 logging.warning(f"转录失败: {original_filename}")
                 
