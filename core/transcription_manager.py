@@ -256,6 +256,120 @@ class TranscriptionManager:
         
         return segment_results
     
+    def _perform_single_retry_round(self, retry_round: int, failed_segments: List[Tuple[int, str]], 
+                                   segment_results: Dict[int, str]) -> Tuple[List[Tuple[int, str]], int]:
+        """
+        执行单轮重试
+        
+        Args:
+            retry_round: 当前重试轮次
+            failed_segments: 需要重试的片段列表 [(索引, 文件名),...]
+            segment_results: 当前的识别结果字典
+            
+        Returns:
+            Tuple[List[Tuple[int, str]], int]: (仍然失败的片段列表, 本轮成功数量)
+        """
+        retry_state = f'retry_{retry_round}'
+        if self.progress_callback:
+            self.progress_callback(
+                retry_state,
+                0,
+                len(failed_segments),
+                f"0/{len(failed_segments)} 片段完成"
+            )
+        
+        still_failed = []
+        success_in_round = 0
+        completed_count = 0
+        
+        # 对失败的片段进行多线程重试
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as retry_executor:
+            future_to_failed = {
+                retry_executor.submit(self.recognize_audio, 
+                                    os.path.join(self.temp_segments_dir, segment_file)): 
+                (idx, segment_file)
+                for idx, segment_file in failed_segments
+            }
+            
+            try:
+                for future in concurrent.futures.as_completed(future_to_failed):
+                    if self.interrupt_received:
+                        logging.warning("检测到中断，正在取消剩余重试任务...")
+                        retry_executor.shutdown(wait=False, cancel_futures=True)
+                        break
+                        
+                    idx, segment_file = future_to_failed[future]
+                    completed_count += 1
+                    
+                    try:
+                        text = future.result(timeout=60)
+                        if text:
+                            segment_results[idx] = text
+                            success_in_round += 1
+                            logging.debug(f"  ├─ 重试成功: {segment_file}")
+                            
+                            # 更新进度
+                            if self.progress_callback:
+                                self.progress_callback(
+                                    retry_state, 
+                                    completed_count, 
+                                    len(failed_segments),
+                                    f"{completed_count}/{len(failed_segments)} 完成 (成功 {success_in_round})"
+                                )
+                        else:
+                            still_failed.append((idx, segment_file))
+                            logging.warning(f"  ├─ 重试失败: {segment_file}")
+                            
+                            # 更新进度
+                            if self.progress_callback:
+                                self.progress_callback(
+                                    retry_state, 
+                                    completed_count, 
+                                    len(failed_segments),
+                                    f"{completed_count}/{len(failed_segments)} 完成 (失败 {len(still_failed)})"
+                                )
+                    except concurrent.futures.TimeoutError:
+                        still_failed.append((idx, segment_file))
+                        logging.warning(f"  ├─ 重试超时: {segment_file}")
+                        
+                        # 更新进度
+                        if self.progress_callback:
+                            self.progress_callback(
+                                retry_state, 
+                                completed_count, 
+                                len(failed_segments),
+                                f"{completed_count}/{len(failed_segments)} 完成 (超时 {len(still_failed)})"
+                            )
+                    except Exception as exc:
+                        still_failed.append((idx, segment_file))
+                        logging.error(f"  ├─ 重试出错: {segment_file} - {str(exc)}")
+                        
+                        # 更新进度
+                        if self.progress_callback:
+                            self.progress_callback(
+                                retry_state, 
+                                completed_count, 
+                                len(failed_segments),
+                                f"{completed_count}/{len(failed_segments)} 完成 (错误 {len(still_failed)})"
+                            )
+            except KeyboardInterrupt:
+                logging.warning("检测到用户中断，正在取消剩余重试任务...")
+                retry_executor.shutdown(wait=False, cancel_futures=True)
+                self.interrupt_received = True
+        
+        # 完成这一轮重试
+        if self.progress_callback:
+            self.progress_callback(
+                retry_state,
+                len(failed_segments),  # 将进度设为总数，表示完成
+                len(failed_segments),
+                f"完成 - 成功 {success_in_round}, 仍失败 {len(still_failed)}" +
+                (" (已中断)" if self.interrupt_received else "")
+            )
+        
+        logging.info(f"  └─ 第 {retry_round} 轮重试结果: 成功 {success_in_round}, 仍失败 {len(still_failed)}")
+        return still_failed, success_in_round
+
     def retry_failed_segments(self, segment_files: List[str], 
                               segment_results: Dict[int, str]) -> Dict[int, str]:
         """
@@ -286,109 +400,12 @@ class TranscriptionManager:
                 
             logging.info(f"第 {retry_round} 轮重试 ({len(failed_segments)} 个片段):")
             
-            # 更新重试进度初始状态
-            retry_state = f'retry_{retry_round}'
-            if self.progress_callback:
-                self.progress_callback(
-                    retry_state,
-                    0,
-                    len(failed_segments),
-                    f"0/{len(failed_segments)} 片段完成"
-                )
+            # 执行单轮重试
+            failed_segments, success_in_round = self._perform_single_retry_round(
+                retry_round, failed_segments, segment_results
+            )
             
-            still_failed = []
-            success_in_round = 0
-            completed_count = 0
-            
-            # 对失败的片段进行多线程重试
-            with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as retry_executor:
-                future_to_failed = {
-                    retry_executor.submit(self.recognize_audio, 
-                                        os.path.join(self.temp_segments_dir, segment_file)): 
-                    (idx, segment_file)
-                    for idx, segment_file in failed_segments
-                }
-                
-                try:
-                    for future in concurrent.futures.as_completed(future_to_failed):
-                        if self.interrupt_received:
-                            logging.warning("检测到中断，正在取消剩余重试任务...")
-                            retry_executor.shutdown(wait=False, cancel_futures=True)
-                            break
-                            
-                        idx, segment_file = future_to_failed[future]
-                        completed_count += 1
-                        
-                        try:
-                            text = future.result(timeout=60)
-                            if text:
-                                segment_results[idx] = text
-                                success_in_round += 1
-                                logging.debug(f"  ├─ 重试成功: {segment_file}")
-                                
-                                # 更新进度
-                                if self.progress_callback:
-                                    self.progress_callback(
-                                        retry_state, 
-                                        completed_count, 
-                                        len(failed_segments),
-                                        f"{completed_count}/{len(failed_segments)} 完成 (成功 {success_in_round})"
-                                    )
-                            else:
-                                still_failed.append((idx, segment_file))
-                                logging.warning(f"  ├─ 重试失败: {segment_file}")
-                                
-                                # 更新进度
-                                if self.progress_callback:
-                                    self.progress_callback(
-                                        retry_state, 
-                                        completed_count, 
-                                        len(failed_segments),
-                                        f"{completed_count}/{len(failed_segments)} 完成 (失败 {len(still_failed)})"
-                                    )
-                        except concurrent.futures.TimeoutError:
-                            still_failed.append((idx, segment_file))
-                            logging.warning(f"  ├─ 重试超时: {segment_file}")
-                            
-                            # 更新进度
-                            if self.progress_callback:
-                                self.progress_callback(
-                                    retry_state, 
-                                    completed_count, 
-                                    len(failed_segments),
-                                    f"{completed_count}/{len(failed_segments)} 完成 (超时 {len(still_failed)})"
-                                )
-                        except Exception as exc:
-                            still_failed.append((idx, segment_file))
-                            logging.error(f"  ├─ 重试出错: {segment_file} - {str(exc)}")
-                            
-                            # 更新进度
-                            if self.progress_callback:
-                                self.progress_callback(
-                                    retry_state, 
-                                    completed_count, 
-                                    len(failed_segments),
-                                    f"{completed_count}/{len(failed_segments)} 完成 (错误 {len(still_failed)})"
-                                )
-                except KeyboardInterrupt:
-                    logging.warning("检测到用户中断，正在取消剩余重试任务...")
-                    retry_executor.shutdown(wait=False, cancel_futures=True)
-                    self.interrupt_received = True
-            
-            # 完成这一轮重试
-            if self.progress_callback:
-                self.progress_callback(
-                    retry_state,
-                    len(failed_segments),  # 将进度设为总数，表示完成
-                    len(failed_segments),
-                    f"完成 - 成功 {success_in_round}, 仍失败 {len(still_failed)}" +
-                    (" (已中断)" if self.interrupt_received else "")
-                )
-            
-            failed_segments = still_failed
-            logging.info(f"  └─ 第 {retry_round} 轮重试结果: 成功 {success_in_round}, 仍失败 {len(still_failed)}")
-            
-            if not still_failed:
+            if not failed_segments:
                 logging.info("  └─ 所有片段都已成功识别，无需继续重试")
                 break
         
