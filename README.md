@@ -75,3 +75,71 @@ Watch mode continuously monitors the media folder and automatically processes ne
 - Real-time monitoring of new files
 - Automatically starts processing
 - Avoids reprocessing completed files
+
+# 依赖管理指南
+
+## 冻结依赖
+
+要冻结项目依赖，请运行：
+
+```bash
+# 将依赖冻结到默认的requirements.txt文件
+python freeze_deps.py freeze
+
+# 或指定输出文件
+python freeze_deps.py freeze --file requirements_dev.txt
+```
+
+## 安装依赖
+
+要从冻结的依赖文件中安装包：
+
+```bash
+# 从默认的requirements.txt文件安装
+python freeze_deps.py install
+
+# 或从指定文件安装
+python freeze_deps.py install --file requirements_dev.txt
+```
+
+## 手动方法
+
+你也可以直接使用pip命令：
+
+```bash
+# 冻结依赖
+pip freeze > requirements.txt
+
+# 安装依赖
+pip install -r requirements.txt
+```
+
+## 冻结依赖问题排查
+
+如果你发现某些包(如watchdog)没有出现在freeze生成的requirements.txt中，可能有以下原因:
+
+1. **环境不匹配**: 确保你在正确的Python环境中运行freeze命令
+2. **包未正确安装**: 某些包可能不是通过pip安装的
+3. **虚拟环境问题**: 确保你在激活了正确的虚拟环境后再运行命令
+
+## 使用增强版冻结脚本
+
+我们提供了一个增强版的依赖冻结脚本，可以确保关键包被包含:
+
+```bash
+# 运行检查并冻结依赖
+python check_and_freeze_deps.py
+```
+
+这个脚本会:
+- 检查watchdog是否已安装
+- 提供安装选项(如果未安装)
+- 确保watchdog被添加到requirements.txt
+
+## 手动添加watchdog
+
+如果您仍然遇到问题，可以手动添加watchdog到您的requirements.txt:
+
+```
+watchdog==x.y.z  # 替换x.y.z为您需要的版本
+```

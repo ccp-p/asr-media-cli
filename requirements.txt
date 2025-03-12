@@ -1,10 +1,13 @@
-# 基础依赖
-tqdm>=4.65.0
-requests>=2.30.0
-pydub>=0.25.1
-
-# 视频处理依赖
-ffmpeg-python>=0.2.0
-SpeechRecognition>=3.8.1
-typing>=3.7.4.3
-# 根据需要添加其他依赖
+certifi==2025.1.31
+charset-normalizer==3.4.1
+colorama==0.4.6
+ffmpeg-python==0.2.0
+future==1.0.0
+idna==3.10
+pydub==0.25.1
+requests==2.32.3
+SpeechRecognition==3.8.1
+tqdm==4.67.1
+typing==3.7.4.3
+urllib3==2.2.3
+watchdog==4.0.2
