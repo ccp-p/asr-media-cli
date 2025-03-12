@@ -19,6 +19,7 @@ from .utils import format_time_duration, load_json_file, save_json_file, Progres
 from .asr import ASRDataSeg
 from .asr_manager import ASRManager
 from .text_formatter import TextFormatter
+from .progress_manager import ProgressManager
 
 class AudioProcessor:
     """音频处理类，负责音频分割、转写和文本整合"""
@@ -67,57 +68,21 @@ class AudioProcessor:
             use_bcut=self.use_bcut
         )
         
-        # 进度条相关
-        self.progress_bars: Dict[str, ProgressBar] = {}
-    
-    # 新增: 通用进度条管理方法
-    def create_progress_bar(self, name: str, total: int, prefix: str, suffix: str = "") -> Optional[ProgressBar]:
-        """
-        创建并存储一个进度条
+        # 初始化进度条管理器
+        self.progress_manager = ProgressManager(show_progress=self.show_progress)
         
-        Args:
-            name: 进度条名称，用于后续引用
-            total: 总步数
-            prefix: 进度条前缀
-            suffix: 进度条后缀
-            
-        Returns:
-            创建的进度条，如果show_progress为False则返回None
-        """
-        if not self.show_progress:
-            return None
-            
-        progress_bar = ProgressBar(total=total, prefix=prefix, suffix=suffix)
-        self.progress_bars[name] = progress_bar
-        return progress_bar
+    # 使用ProgressManager替换原有的进度条方法
+    def create_progress_bar(self, name: str, total: int, prefix: str, suffix: str = "") -> Optional[ProgressBar]:
+        """创建并存储一个进度条"""
+        return self.progress_manager.create_progress_bar(name, total, prefix, suffix)
     
     def update_progress(self, name: str, current: Optional[int] = None, suffix: Optional[str] = None) -> None:
-        """
-        更新指定进度条
-        
-        Args:
-            name: 进度条名称
-            current: 当前进度
-            suffix: 新的后缀文本
-        """
-        if not self.show_progress or name not in self.progress_bars:
-            return
-            
-        self.progress_bars[name].update(current, suffix)
+        """更新指定进度条"""
+        self.progress_manager.update_progress(name, current, suffix)
     
     def finish_progress(self, name: str, suffix: Optional[str] = None) -> None:
-        """
-        完成指定进度条
-        
-        Args:
-            name: 进度条名称
-            suffix: 完成时的后缀文本
-        """
-        if not self.show_progress or name not in self.progress_bars:
-            return
-            
-        self.progress_bars[name].finish(suffix)
-        del self.progress_bars[name]
+        """完成指定进度条"""
+        self.progress_manager.finish_progress(name, suffix)
     
     # 新增: 安全执行函数的包装器
     def safe_execute(self, func: Callable, error_msg: str = "执行出错", progress_name: Optional[str] = None, 
@@ -143,7 +108,7 @@ class AudioProcessor:
                 
             logging.error(f"{error_msg}: {str(e)}")
             
-            if progress_name and self.show_progress and progress_name in self.progress_bars:
+            if progress_name:
                 self.finish_progress(progress_name, error_suffix)
                 
             return None
@@ -1033,13 +998,8 @@ class AudioProcessor:
                 logging.warning(f"关闭ASR管理器资源时出错: {str(e)}")
         
         # 2. 关闭所有未完成的进度条
-        if hasattr(self, 'progress_bars') and self.progress_bars:
-            logging.info(f"关闭 {len(self.progress_bars)} 个未完成的进度条...")
-            for name, bar in list(self.progress_bars.items()):
-                try:
-                    self.finish_progress(name, "已终止")
-                except Exception as e:
-                    logging.warning(f"关闭进度条 '{name}' 时出错: {str(e)}")
+        if hasattr(self, 'progress_manager'):
+            self.progress_manager.close_all_progress_bars("已终止")
         
         # 3. 使用超时机制清理临时文件
         try:
