@@ -58,7 +58,7 @@ def convert_media_to_txt(media_folder: str, output_folder: str, max_retries: int
                      max_workers: int = 4, use_jianying_first: bool = False, 
                      use_kuaishou: bool = False, use_bcut: bool = False,
                      format_text: bool = True, include_timestamps: bool = True,
-                     watch_mode: bool = False) -> None:
+                     watch_mode: bool = False, segments_per_part: int = 30) -> None:
     """
     批量将媒体文件(MP3、TS、MP4等)转为文本，使用ASR服务轮询
     
@@ -73,6 +73,7 @@ def convert_media_to_txt(media_folder: str, output_folder: str, max_retries: int
         format_text: 是否格式化输出文本以提高可读性
         include_timestamps: 是否在格式化文本中包含时间戳
         watch_mode: 是否启用监听模式，监控文件夹变动
+        segments_per_part: 每个部分包含多少个30秒片段，默认30个(15分钟)
     """
     # 创建处理器
     processor = AudioProcessor(
@@ -84,7 +85,8 @@ def convert_media_to_txt(media_folder: str, output_folder: str, max_retries: int
         use_kuaishou=use_kuaishou,
         use_bcut=use_bcut,
         format_text=format_text,
-        include_timestamps=include_timestamps
+        include_timestamps=include_timestamps,
+        segments_per_part=segments_per_part  # 添加片段分组参数
     )
     
     # 为AudioProcessor添加媒体文件预处理功能
@@ -135,17 +137,18 @@ if __name__ == "__main__":
         check_dependencies()
         
         # 修改这几个路径即可
-        convert_media_to_txt(  # 注意函数名已改为convert_media_to_txt
-            media_folder = r"D:\download",  # 如：r"C:\Users\用户名\Music"
-            output_folder = r"D:\download\dest",  # 如：r"D:\output"
-            max_retries = 3,  # 集中重试的最大次数
-            max_workers = 6,   # 线程池中的线程数，可根据CPU配置调整
-            use_jianying_first = True,  # 设置为True表示优先使用剪映API进行识别
-            use_kuaishou = True,   # 设置为True表示使用快手API进行识别
-            use_bcut = True,  # 设置为True表示优先使用B站ASR进行识别（优先级最高）
-            format_text = True,  # 格式化输出文本，提高可读性
-            include_timestamps = True,  # 在格式化文本中包含时间戳
-            watch_mode = True,  # 设置为True启用监听模式，监控文件夹变动
+        convert_media_to_txt(  
+            media_folder = r"D:\download",
+            output_folder = r"D:\download\dest",
+            max_retries = 3,
+            max_workers = 6,
+            use_jianying_first = True,
+            use_kuaishou = True,
+            use_bcut = True,
+            format_text = True,
+            include_timestamps = True,
+            watch_mode = True,
+            segments_per_part = 30  # 30个30秒片段 = 15分钟
         )
     except KeyboardInterrupt:
         logging.warning("\n程序已被用户中断")

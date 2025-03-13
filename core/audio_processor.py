@@ -84,7 +84,14 @@ class AudioProcessor:
             max_retries=self.max_retries,
             progress_callback=self.transcription_progress_callback
         )
-    
+        
+        # 分段处理相关参数
+        self.segments_per_part = kwargs.get('segments_per_part', 30)  # 每部分包含的30秒片段数，默认30个(15分钟)
+        self.save_part_immediately = kwargs.get('save_part_immediately', True)  # 每处理完一部分就保存
+        
+        # 添加音频时长阈值参数，默认15分钟(900秒)
+        self.part_processing_threshold = kwargs.get('part_processing_threshold', 900)
+        
     # 新增的转录进度回调方法
     def transcription_progress_callback(self, state: str, current: int, total: int, message: str):
         """
@@ -350,6 +357,10 @@ class AudioProcessor:
             # 记录单个文件处理开始时间
             file_start_time = time.time()
             
+            # 检查文件是否已在记录中及其处理状态
+            file_record = self.processed_files.get(input_path, {})
+            processed_parts = file_record.get("processed_parts", [])
+            
             # 分割音频为较小片段
             self.update_progress("file_progress", 0, "分割音频")
             segment_files = self.split_audio_file(input_path)
@@ -359,50 +370,121 @@ class AudioProcessor:
                 self.finish_progress("file_progress", "分割失败，跳过")
                 return False
             
-            # 使用转录管理器处理音频片段
-            self.update_progress("file_progress", 1, "识别音频")
+            # 计算音频总时长和预计部分数
+            total_segments = len(segment_files)
+            total_parts = (total_segments + self.segments_per_part - 1) // self.segments_per_part
             
-            # 设置转录管理器的中断标志为False，以便重新开始
-            self.transcription_manager.set_interrupt_flag(False)
+            logging.info(f"音频 {filename} 共有 {total_segments} 个片段，将分为 {total_parts} 个部分处理")
             
-            # 调用转录管理器的transcribe_segments方法
-            segment_results, stats = self.transcription_manager.transcribe_segments(segment_files)
+            # 按部分处理音频片段
+            all_segment_results = {}
+            part_stats = []
             
-            # 检查中断状态
-            self.interrupt_received = self.transcription_manager.interrupt_received
+            for part_index in range(total_parts):
+                part_num = part_index + 1
+                
+                # 检查此部分是否已处理
+                if part_num in processed_parts:
+                    logging.info(f"跳过已处理的部分 {part_num}/{total_parts}")
+                    continue
+                
+                # 计算此部分的片段范围
+                start_segment = part_index * self.segments_per_part
+                end_segment = min(start_segment + self.segments_per_part, total_segments)
+                current_part_segments = segment_files[start_segment:end_segment]
+                
+                logging.info(f"处理部分 {part_num}/{total_parts} (片段 {start_segment+1}-{end_segment})")
+                
+                # 使用转录管理器处理当前部分的音频片段
+                self.update_progress("file_progress", 1, f"识别音频 部分 {part_num}/{total_parts}")
+                
+                # 设置转录管理器的中断标志为False，以便重新开始
+                self.transcription_manager.set_interrupt_flag(False)
+                
+                # 调用转录管理器的transcribe_segments方法处理当前部分的片段
+                segment_indices = list(range(start_segment, end_segment))
+                current_part_files = current_part_segments
+                segment_results, stats = self.transcription_manager.transcribe_segments(current_part_files)
+                
+                # 将相对索引转换为全局索引
+                adjusted_results = {}
+                for rel_idx, text in segment_results.items():
+                    abs_idx = start_segment + rel_idx
+                    adjusted_results[abs_idx] = text
+                
+                # 合并结果
+                all_segment_results.update(adjusted_results)
+                
+                # 检查中断状态
+                self.interrupt_received = self.transcription_manager.interrupt_received
+                
+                # 准备当前部分的结果文本
+                self.update_progress("file_progress", 3, f"生成部分 {part_num} 文本")
+                
+                # 获取当前部分的片段文件列表和结果
+                current_part_results = {i-start_segment: all_segment_results.get(i) 
+                                     for i in range(start_segment, end_segment)
+                                     if i in all_segment_results}
+                
+                # 准备当前部分的文本
+                part_text = self.prepare_result_text(current_part_files, current_part_results)
+                
+                # 保存当前部分的结果
+                part_output_file = self.save_part_result(part_text, filename, part_num)
+                
+                # 记录当前部分的统计信息
+                part_stats.append({
+                    "part": part_num,
+                    "segments": end_segment - start_segment,
+                    "success_count": stats['success_count'],
+                    "output_file": part_output_file,
+                    "processed_time": time.strftime("%Y-%m-%d %H:%M:%S")
+                })
+                
+                # 更新处理记录
+                if input_path not in self.processed_files:
+                    self.processed_files[input_path] = {}
+                
+                if "processed_parts" not in self.processed_files[input_path]:
+                    self.processed_files[input_path]["processed_parts"] = []
+                
+                self.processed_files[input_path]["processed_parts"].append(part_num)
+                self.processed_files[input_path]["total_parts"] = total_parts
+                self.processed_files[input_path]["last_processed_time"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                self.processed_files[input_path]["part_stats"] = part_stats
+                
+                # 保存记录
+                self._save_processed_records()
+                
+                logging.info(f"✅ 部分 {part_num}/{total_parts} 已处理并保存")
+                
+                # 如果收到中断信号，停止处理
+                if self.interrupt_received:
+                    logging.warning(f"检测到中断信号，暂停处理文件 {filename}")
+                    break
             
-            # 识别已经完成，更新进度到保存阶段
-            self.update_progress("file_progress", 3, "生成文本")
-            
-            # 准备结果文本
-            full_text = self.prepare_result_text(segment_files, segment_results)
-            
-            # 保存结果到文件
-            output_file = self.save_result_text(full_text, filename)
-            
-            # 计算并显示单个文件处理时长
+            # 计算文件总处理时长
             file_duration = time.time() - file_start_time
             formatted_duration = format_time_duration(file_duration)
             
-            status = "（部分完成 - 已中断）" if self.interrupt_received else ""
+            # 检查是否所有部分都已处理完
+            all_parts_processed = len(self.processed_files[input_path]["processed_parts"]) >= total_parts
             
-            # 更新已处理记录
-            self.processed_files[input_path] = {
-                "processed_time": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "output_file": output_file,
-                "interrupted": self.interrupt_received,
-                "success_rate": f"{stats['success_count']}/{stats['total_count']}",
-                "duration": formatted_duration
-            }
+            # 更新文件处理状态
+            self.processed_files[input_path]["completed"] = all_parts_processed
+            self.processed_files[input_path]["interrupted"] = self.interrupt_received
+            self.processed_files[input_path]["duration"] = formatted_duration
             self._save_processed_records()
             
             # 完成文件处理进度条
-            success_rate = f"{stats['success_count']}/{stats['total_count']}"
-            self.finish_progress("file_progress", f"完成 - 成功率: {success_rate}, 耗时: {formatted_duration}")
+            status = "完成" if all_parts_processed else "部分完成"
+            processed_parts_count = len(self.processed_files[input_path]["processed_parts"])
+            self.finish_progress("file_progress", 
+                               f"{status} - 处理了 {processed_parts_count}/{total_parts} 部分, 耗时: {formatted_duration}")
             
-            logging.info(f"✅ {filename} 转换完成{status}: 成功识别 {stats['success_count']}/{stats['total_count']} 片段" + 
-                      (f", 失败 {stats['fail_count']} 片段" if stats['fail_count'] > 0 else "") + 
-                      f" - 耗时: {formatted_duration}")
+            logging.info(f"✅ {filename} 转换{'' if all_parts_processed else '部分'}完成: " + 
+                       f"处理了 {processed_parts_count}/{total_parts} 部分" +
+                       f" - 耗时: {formatted_duration}")
             
             return True
             
@@ -412,6 +494,29 @@ class AudioProcessor:
             self.finish_progress("file_progress", f"处理失败: {str(e)}")
             return False
     
+    def save_part_result(self, text: str, original_filename: str, part_num: int) -> str:
+        """
+        保存部分转写结果到文本文件
+        
+        Args:
+            text: 要保存的文本内容
+            original_filename: 原始音频文件名
+            part_num: 部分编号
+            
+        Returns:
+            保存的输出文件路径
+        """
+        base_name = os.path.splitext(original_filename)[0]
+        output_file = os.path.join(self.output_folder, f"{base_name}_part{part_num}.txt")
+        
+        with open(output_file, 'w', encoding='utf-8') as f:
+            # 添加文件头，包含部分信息
+            f.write(f"# {base_name} - 第 {part_num} 部分\n")
+            f.write(f"# 处理时间: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            f.write(text)
+        
+        return output_file
+
     def process_all_files(self) -> Tuple[int, float]:
         """
         处理所有媒体文件（音频和视频）
@@ -555,8 +660,16 @@ class AudioProcessor:
             # 检查对应的mp3文件是否已在处理记录中且已完成
             base_name = os.path.splitext(filename)[0]
             mp3_path = os.path.join(self.output_folder, f"{base_name}.mp3")
-            if mp3_path in self.processed_files and not self.processed_files[mp3_path].get('interrupted', False):
-                logging.info(f"跳过已处理的视频: {filename}")
+            
+            # 修改完成检查逻辑 - 检查是否所有部分都已处理
+            is_completed = False
+            if mp3_path in self.processed_files:
+                record = self.processed_files[mp3_path]
+                if record.get("completed", False):
+                    is_completed = True
+                    
+            if is_completed:
+                logging.info(f"跳过已处理完成的视频: {filename}")
                 return
                 
             # 提取音频
@@ -578,9 +691,15 @@ class AudioProcessor:
         
         # 处理音频文件
         elif file_extension == '.mp3':
-            # 检查是否已处理
-            if file_path in self.processed_files and not self.processed_files[file_path].get('interrupted', False):
-                logging.info(f"跳过已处理的音频: {filename}")
+            # 检查是否已完全处理完成
+            is_completed = False
+            if file_path in self.processed_files:
+                record = self.processed_files[file_path]
+                if record.get("completed", False):
+                    is_completed = True
+                
+            if is_completed:
+                logging.info(f"跳过已处理完成的音频: {filename}")
                 return
                 
             logging.info(f"处理音频文件: {filename}")
@@ -612,8 +731,18 @@ class AudioProcessor:
             # 记录开始处理
             logging.info(f"开始转录音频: {original_filename}")
             
-            # 调用单文件处理方法
-            success = self.process_single_file(audio_path)
+            # 获取音频时长，决定是否分part处理
+            audio_duration = self.get_audio_duration(audio_path)
+            use_part_processing = audio_duration > self.part_processing_threshold
+            
+            if use_part_processing:
+                logging.info(f"音频 {original_filename} 长度为 {audio_duration:.2f} 秒，超过 {self.part_processing_threshold} 秒阈值，将按分part处理")
+                # 分part处理，使用原有逻辑
+                success = self.process_single_file(audio_path)
+            else:
+                logging.info(f"音频 {original_filename} 长度为 {audio_duration:.2f} 秒，不超过 {self.part_processing_threshold} 秒阈值，将作为整体处理")
+                # 不分part处理，调用新的整体处理方法
+                success = self.process_single_file_no_parts(audio_path)
             
             # 打印处理结果
             if success:
@@ -745,3 +874,111 @@ class AudioProcessor:
         
         # 5. 最终的结束日志
         logging.info("=== 程序执行结束 ===")
+    
+    # 添加获取音频时长的方法
+    def get_audio_duration(self, audio_path: str) -> float:
+        """
+        获取音频文件的时长（秒）
+        
+        Args:
+            audio_path: 音频文件路径
+            
+        Returns:
+            音频时长（秒）
+        """
+        try:
+            audio = AudioSegment.from_file(audio_path)
+            # pydub以毫秒为单位，转换为秒
+            return len(audio) / 1000.0
+        except Exception as e:
+            logging.warning(f"获取音频时长失败: {str(e)}，默认按长音频处理")
+            return self.part_processing_threshold + 1  # 默认比阈值长，按分part处理
+    
+    # 添加不分part处理单个文件的方法
+    def process_single_file_no_parts(self, input_path: str) -> bool:
+        """
+        处理单个音频文件(不分part处理)
+        
+        Args:
+            input_path: 音频文件路径
+            
+        Returns:
+            处理是否成功
+        """
+        filename = os.path.basename(input_path)
+        
+        try:
+            # 创建单个文件总进度条
+            file_progress = self.create_progress_bar(
+                "file_progress",
+                total=4,  # 分割、识别、整合、保存 4个阶段
+                prefix=f"处理 {filename}",
+                suffix="准备中"
+            )
+            
+            # 记录单个文件处理开始时间
+            file_start_time = time.time()
+            
+            # 分割音频为较小片段
+            self.update_progress("file_progress", 0, "分割音频")
+            segment_files = self.split_audio_file(input_path)
+            
+            if not segment_files:
+                logging.error(f"分割 {filename} 失败，跳过此文件")
+                self.finish_progress("file_progress", "分割失败，跳过")
+                return False
+            
+            # 计算音频总时长
+            total_segments = len(segment_files)
+            
+            logging.info(f"音频 {filename} 共有 {total_segments} 个片段，整体处理无需分part")
+            
+            # 使用转录管理器处理音频片段
+            self.update_progress("file_progress", 1, "识别音频")
+            
+            # 设置转录管理器的中断标志为False，以便重新开始
+            self.transcription_manager.set_interrupt_flag(False)
+            
+            # 调用转录管理器的transcribe_segments方法处理所有片段
+            segment_results, stats = self.transcription_manager.transcribe_segments(segment_files)
+            
+            # 检查中断状态
+            self.interrupt_received = self.transcription_manager.interrupt_received
+            
+            # 准备结果文本
+            self.update_progress("file_progress", 2, "生成文本")
+            
+            # 准备文本
+            full_text = self.prepare_result_text(segment_files, segment_results)
+            
+            # 保存结果
+            self.update_progress("file_progress", 3, "保存文本")
+            output_file = self.save_result_text(full_text, filename)
+            
+            # 更新处理记录
+            if input_path not in self.processed_files:
+                self.processed_files[input_path] = {}
+            
+            self.processed_files[input_path]["completed"] = True
+            self.processed_files[input_path]["interrupted"] = self.interrupt_received
+            self.processed_files[input_path]["last_processed_time"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            
+            # 保存记录
+            self._save_processed_records()
+            
+            # 计算文件总处理时长
+            file_duration = time.time() - file_start_time
+            formatted_duration = format_time_duration(file_duration)
+            
+            # 完成文件处理进度条
+            self.finish_progress("file_progress", f"完成 - 耗时: {formatted_duration}")
+            
+            logging.info(f"✅ {filename} 转换完成 - 耗时: {formatted_duration}")
+            
+            return True
+            
+        except Exception as e:
+            logging.error(f"❌ {filename} 处理失败: {str(e)}")
+            # 确保进度条完成
+            self.finish_progress("file_progress", f"处理失败: {str(e)}")
+            return False
