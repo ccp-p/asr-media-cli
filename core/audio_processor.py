@@ -86,7 +86,7 @@ class AudioProcessor:
         )
         
         # 分段处理相关参数
-        self.segments_per_part = kwargs.get('segments_per_part', 30)  # 每部分包含的30秒片段数，默认30个(15分钟)
+        self.segments_per_part = kwargs.get('segments_per_part', 50)  # 每部分包含的30秒片段数，默认50个(25分钟)
         self.save_part_immediately = kwargs.get('save_part_immediately', True)  # 每处理完一部分就保存
         
         # 添加音频时长阈值参数，默认15分钟(900秒)
@@ -244,13 +244,15 @@ class AudioProcessor:
     # 删除旧的retry_failed_segments方法，使用TranscriptionManager代替
     
     def prepare_result_text(self, segment_files: List[str], 
-                          segment_results: Dict[int, str]) -> str:
+                          segment_results: Dict[int, str],
+                          start_segment: int = 0) -> str:
         """
         准备最终的识别结果文本
         
         Args:
             segment_files: 所有音频片段文件名列表
             segment_results: 识别结果字典
+            start_segment: 当前部分的起始片段索引，用于计算连续时间戳
             
         Returns:
             合并格式化后的文本
@@ -269,18 +271,21 @@ class AudioProcessor:
         )
         
         for i in range(len(segment_files)):
+            # 计算全局时间戳索引 (考虑当前部分的起始位置)
+            global_idx = start_segment + i
+            
             if i in segment_results:
                 all_text.append(segment_results[i])
-                # 简单估算时间戳，每个片段30秒
+                # 计算连续的时间戳，每个片段30秒
                 all_timestamps.append({
-                    'start': i * 30,
-                    'end': (i + 1) * 30
+                    'start': global_idx * 30,
+                    'end': (global_idx + 1) * 30
                 })
             else:
                 all_text.append("[无法识别的音频片段]")
                 all_timestamps.append({
-                    'start': i * 30,
-                    'end': (i + 1) * 30
+                    'start': global_idx * 30,
+                    'end': (global_idx + 1) * 30
                 })
                 
             # 更新进度条
@@ -426,8 +431,8 @@ class AudioProcessor:
                                      for i in range(start_segment, end_segment)
                                      if i in all_segment_results}
                 
-                # 准备当前部分的文本
-                part_text = self.prepare_result_text(current_part_files, current_part_results)
+                # 准备当前部分的文本，传入start_segment确保时间戳连续
+                part_text = self.prepare_result_text(current_part_files, current_part_results, start_segment)
                 
                 # 保存当前部分的结果
                 part_output_file = self.save_part_result(part_text, filename, part_num)
@@ -948,8 +953,8 @@ class AudioProcessor:
             # 准备结果文本
             self.update_progress("file_progress", 2, "生成文本")
             
-            # 准备文本
-            full_text = self.prepare_result_text(segment_files, segment_results)
+            # 准备文本，start_segment=0表示从头开始
+            full_text = self.prepare_result_text(segment_files, segment_results, 0)
             
             # 保存结果
             self.update_progress("file_progress", 3, "保存文本")
@@ -979,6 +984,3 @@ class AudioProcessor:
             
         except Exception as e:
             logging.error(f"❌ {filename} 处理失败: {str(e)}")
-            # 确保进度条完成
-            self.finish_progress("file_progress", f"处理失败: {str(e)}")
-            return False
