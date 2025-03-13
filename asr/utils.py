@@ -1,6 +1,11 @@
 import hmac
 import hashlib
 from typing import Dict
+from pydub import AudioSegment
+def get_audio_duration (audio_file: str) -> float:
+    """获取音频文件时长"""
+    pydub_audio = AudioSegment.from_file(audio_file)
+    return len(pydub_audio) / 1000
 
 def sign(key: bytes, msg: str) -> bytes:
     """使用HMAC-SHA256生成签名"""
