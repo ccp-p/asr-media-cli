@@ -4,6 +4,8 @@ import logging
 import concurrent.futures
 from typing import Dict, List, Optional, Callable, Any, Tuple
 
+import pydub
+
 class TranscriptionManager:
     """音频转录管理器，负责多线程识别音频片段和重试管理"""
     
@@ -447,3 +449,68 @@ class TranscriptionManager:
         }
         
         return segment_results, stats
+        
+    def transcribe_long_audio(self, audio_path: str, part_duration_minutes: int = 15) -> Dict[str, Any]:
+        """
+        将长音频分成多个部分进行识别，每部分默认15分钟
+        
+        Args:
+            audio_path: 音频文件路径
+            part_duration_minutes: 每部分的时长（分钟）
+            
+        Returns:
+            包含识别结果和统计信息的字典
+        """
+        if not os.path.exists(audio_path):
+            logging.error(f"音频文件不存在: {audio_path}")
+            return {"error": "音频文件不存在", "success": False}
+            
+        logging.info(f"开始处理长音频: {audio_path}，每部分 {part_duration_minutes} 分钟")
+        
+        # 获取音频信息需要依赖外部库，这里先留作接口
+        # 实际项目中应该调用相应的音频处理函数获取总时长
+        audio_duration_minutes = self._get_audio_duration_minutes(audio_path)
+        
+        if audio_duration_minutes <= 0:
+            logging.error(f"无法获取音频时长或音频无效: {audio_path}")
+            return {"error": "无法获取音频时长或音频无效", "success": False}
+            
+        # 计算需要分成的部分数
+        num_parts = max(1, int(audio_duration_minutes / part_duration_minutes) + 
+                      (1 if audio_duration_minutes % part_duration_minutes > 0 else 0))
+            
+        logging.info(f"音频总时长: {audio_duration_minutes:.2f} 分钟，将分为 {num_parts} 个部分处理")
+        
+        # 初始化结果
+        all_results = {}
+        all_stats = {
+            "total_parts": num_parts,
+            "completed_parts": 0,
+            "success_parts": 0,
+            "part_results": []
+        }
+        
+        # 如果只有一个部分，直接处理整个音频
+        if num_parts == 1:
+            logging.info("音频时长较短，将作为单个部分处理")
+            return {"message": "音频较短，使用常规处理方式", "use_regular_method": True}
+        
+        # 处理每个部分的逻辑将在后续实现
+        logging.info("分部处理功能已准备，需要实现音频分割和部分处理逻辑")
+        return {"message": "分部处理功能框架已创建", "num_parts": num_parts, "success": True}
+    
+    def _get_audio_duration_minutes(self, audio_path: str) -> float:
+        """
+        获取音频时长（分钟）
+        
+        Args:
+            audio_path: 音频文件路径
+            
+        Returns:
+            音频时长（分钟）
+        """
+        # 实际项目中应该使用音频处理库获取时长
+        # 例如使用 pydub, librosa 等
+        audio_duration =  pydub.AudioSegment.from_file(audio_path).duration_seconds
+
+        return audio_duration
