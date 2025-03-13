@@ -16,6 +16,18 @@ class ProgressManager:
         self.show_progress = show_progress
         self.progress_bars: Dict[str, ProgressBar] = {}
     
+    def has_progress_bar(self, name: str) -> bool:
+        """
+        检查是否存在指定名称的进度条
+        
+        Args:
+            name: 进度条名称
+            
+        Returns:
+            是否存在该进度条
+        """
+        return name in self.progress_bars
+    
     def create_progress_bar(self, name: str, total: int, prefix: str, suffix: str = "") -> Optional[ProgressBar]:
         """
         创建并存储一个进度条
