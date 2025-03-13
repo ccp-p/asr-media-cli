@@ -148,7 +148,7 @@ if __name__ == "__main__":
             format_text = True,
             include_timestamps = True,
             watch_mode = True,
-            segments_per_part = 30  # 30个30秒片段 = 15分钟
+            segments_per_part = 50  # 30个30秒片段 = 15分钟
         )
     except KeyboardInterrupt:
         logging.warning("\n程序已被用户中断")
