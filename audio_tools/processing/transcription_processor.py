@@ -129,10 +129,9 @@ class TranscriptionProcessor:
                 if current_time - last_progress_update > PROGRESS_UPDATE_INTERVAL and self.progress_callback:
                     last_progress_update = current_time
                     self.progress_callback(
-                        'recognize',
                         completed_count,
                         total_segments,
-                        f"{completed_count}/{total_segments} 片段完成，{len(active_futures)} 个处理中..."
+                     f"{completed_count}/{total_segments} 片段完成，{len(active_futures)} 个处理中..."
                     )
                 
                 # 周期性检查卡住的任务

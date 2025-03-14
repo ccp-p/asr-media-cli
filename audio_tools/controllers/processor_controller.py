@@ -131,12 +131,11 @@ class ProcessorController:
         # 打印统计信息
         self._print_final_stats()
     
-    def _progress_callback(self, state: str, current: int, total: int, message: Optional[str] = None):
+    def _progress_callback(self,  current: int, total: int, message: Optional[str] = None):
         """
-        进度回调处理
+        进度回调处理 - 接受但忽略state参数
         
         Args:
-            state: 状态标识
             current: 当前进度
             total: 总进度
             message: 可选的进度消息
@@ -146,26 +145,29 @@ class ProcessorController:
             
         # 如果没有提供消息，使用默认消息
         if message is None:
-            message = f"{state}: {current}/{total}"
+            message = f"处理进度: {current}/{total}"
             
-        # 根据状态创建或更新对应的进度条
-        if not self.progress_manager.has_progress_bar(state):
-            description = message if message else state
+        # 使用固定的进度条名称
+        progress_name = "processing_progress"
+            
+        # 创建或更新对应的进度条
+        if not self.progress_manager.has_progress_bar(progress_name):
             self.progress_manager.create_progress_bar(
-                state,
+                progress_name,
                 total,
-                description
+                "处理进度"
             )
         
+        # 更新进度
         self.progress_manager.update_progress(
-            state,
+            progress_name,
             current,
             message
         )
         
         # 如果进度完成，关闭进度条
         if current >= total:
-            self.progress_manager.finish_progress(state, message or "完成")
+            self.progress_manager.finish_progress(progress_name, message or "完成")
     
     def _update_stats(self, file_stats: Dict[str, Any]):
         """更新统计信息"""
@@ -250,7 +252,7 @@ class ProcessorController:
             
             if self.config['watch_mode']:
                  # 处理已有文件
-                 
+                self._process_existing_files()
                 self._start_watch_mode()
             else:
                 self._process_existing_files()

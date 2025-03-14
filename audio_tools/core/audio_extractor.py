@@ -69,7 +69,6 @@ class AudioExtractor:
                 self.progress_callback(
                     i, 
                     expected_segments, 
-                    expected_segments,
                     f"导出片段 {i+1}/{expected_segments}"
                 )
             
