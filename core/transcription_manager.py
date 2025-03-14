@@ -56,7 +56,7 @@ class TranscriptionManager:
             # 更新初始进度
             if self.progress_callback:
                 try:
-                    self.progress_callback('recognize', 0, len(segment_files), "开始识别片段")
+                    self.progress_callback( 0, len(segment_files), "开始识别片段")
                 except Exception as e:
                     logging.warning(f"进度回调出错: {str(e)}")
             
@@ -125,7 +125,6 @@ class TranscriptionManager:
                                 if self.progress_callback:
                                     try:
                                         self.progress_callback(
-                                            'recognize', 
                                             completed_count, 
                                             len(segment_files), 
                                             status_text
@@ -138,7 +137,6 @@ class TranscriptionManager:
                                 if self.progress_callback:
                                     try:
                                         self.progress_callback(
-                                            'recognize',
                                             completed_count, 
                                             len(segment_files),
                                             f"{completed_count}/{len(segment_files)} 片段完成 (超时 {segment_file})"
@@ -150,7 +148,6 @@ class TranscriptionManager:
                                 if self.progress_callback:
                                     try:
                                         self.progress_callback(
-                                            'recognize',
                                             completed_count, 
                                             len(segment_files),
                                             f"{completed_count}/{len(segment_files)} 片段完成 (错误)"
@@ -168,7 +165,6 @@ class TranscriptionManager:
                             last_progress_update = current_time
                             try:
                                 self.progress_callback(
-                                    'recognize',
                                     completed_count,
                                     len(segment_files),
                                     f"{completed_count}/{len(segment_files)} 片段完成，{len(active_futures)} 个处理中..."
@@ -206,7 +202,6 @@ class TranscriptionManager:
                                 if self.progress_callback:
                                     try:
                                         self.progress_callback(
-                                            'recognize',
                                             completed_count,
                                             len(segment_files),
                                             f"{completed_count}/{len(segment_files)} 片段完成 (强制取消卡住任务)"
@@ -261,7 +256,6 @@ class TranscriptionManager:
         if self.progress_callback:
             try:
                 self.progress_callback(
-                    'recognize',
                     len(segment_files),  # 将进度设为总数，表示完成
                     len(segment_files),
                     f"完成 - {success_count} 成功, {fail_count} 失败" + 

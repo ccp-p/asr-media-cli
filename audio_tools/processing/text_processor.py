@@ -63,7 +63,6 @@ class TextProcessor:
         
         if self.progress_callback:
             self.progress_callback(
-                'text_preparation',
                 0,
                 len(segment_files),
                 "准备处理文本"
@@ -96,7 +95,6 @@ class TextProcessor:
             # 更新进度
             if self.progress_callback:
                 self.progress_callback(
-                    'text_preparation',
                     i + 1,
                     len(segment_files),
                     f"处理片段 {i+1}/{len(segment_files)}"
@@ -107,7 +105,6 @@ class TextProcessor:
             if self.format_text:
                 if self.progress_callback:
                     self.progress_callback(
-                        'format_text',
                         0,
                         1,
                         "正在格式化文本"
@@ -120,7 +117,6 @@ class TextProcessor:
                 
                 if self.progress_callback:
                     self.progress_callback(
-                        'format_text',
                         1,
                         1,
                         "格式化完成"

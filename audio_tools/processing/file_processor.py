@@ -227,11 +227,48 @@ class FileProcessor:
                     segment_results
                 )
             
-            # TODO: 处理转写结果，生成文本文件
+            # 处理转写结果，生成文本文件
+            if self.progress_callback:
+                self.progress_callback(
+                    0,
+                    1,
+                    "准备生成文本文件..."
+                )
             
-            # 这部分功能将在text_processor模块中实现
-             
+            # 准备元数据
+            metadata = {
+                "原始文件": filename,
+                "处理时间": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "识别成功率": f"{len(segment_results)}/{len(segment_files)} 片段",
+                "音频长度": f"{len(segment_files) * 30}秒"
+            }
             
+            # 准备文本内容
+            result_text = self.text_processor.prepare_result_text(
+                segment_files=segment_files,
+                segment_results=segment_results,
+                metadata=metadata
+            )
+            
+            if not result_text:
+                logging.warning(f"无有效转写结果: {filename}")
+                return False
+            
+            # 保存文本文件
+            output_file = self.text_processor.save_result_text(
+                text=result_text,
+                filename=filename,
+                metadata=metadata
+            )
+            
+            if self.progress_callback:
+                self.progress_callback(
+                    1,
+                    1,
+                    f"文本生成完成: {os.path.basename(output_file)}"
+                )
+                
+            logging.info(f"转写结果已保存到: {output_file}")
             return True
             
         except Exception as e:
