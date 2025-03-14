@@ -1,80 +1,136 @@
-# Audio Transcription Tool
+# Audio Processing Tool
 
-A powerful audio/video processing tool that automatically segments, recognizes, and transcribes audio content into text. Supports multiple ASR services and parallel processing for improved efficiency.
+A powerful audio processing tool that converts audio and video files to text.
 
-*[中文版本](README.zh.md)*
+## Features
 
-## Key Features
-
-- ✅ Automatic segmentation of long audio into smaller clips for processing
-- ✅ Support for multiple ASR (Automatic Speech Recognition) services
-- ✅ Parallel processing of audio files for improved efficiency
-- ✅ Support for both audio and video files (automatically extracts audio from video)
-- ✅ Automatic retry of failed segments
-- ✅ Progress bar display for processing steps
-- ✅ Comprehensive logging
-- ✅ Watch mode: automatically process newly added files
+- Support for multiple audio and video formats
+- Automatic audio extraction from video
+- Smart segmentation for long audio files
+- Multiple ASR service polling with auto-retry
+- Real-time progress display
+- File monitoring mode
+- Flexible configuration options
 
 ## Installation
 
 1. Clone the repository:
-   ```
-   git clone <repository-url>
-   cd segement_audio
-   ```
+```bash
+git clone [repository-url]
+cd segement_audio
+```
 
 2. Install dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
+```bash
+pip install -r requirements.txt
+```
 
-3. Make sure FFmpeg is installed (required for video processing)
+3. Install FFmpeg (for video processing):
+- Windows: Download from https://ffmpeg.org/download.html and add to system PATH
+- Linux: `sudo apt-get install ffmpeg`
+- MacOS: `brew install ffmpeg`
 
 ## Usage
 
-1. Prepare your audio/video files and place them in the media folder
+### Command Line Interface
 
-2. Run the main program:
-   ```
-   python main.py
-   ```
-   
-   Enable watch mode (automatically process newly added files):
-   ```
-   python main.py --watch
-   ```
-
-3. Check the output files in the output folder
-
-## Configuration Options
-
-You can customize processing parameters as follows:
-
-```python
-processor = AudioProcessor(
-    media_folder='./media',           # Media folder path
-    output_folder='./output',         # Output folder path
-    max_retries=3,                    # Maximum number of retries
-    max_workers=4,                    # Maximum parallel processing threads
-    use_jianying_first=True,          # Prioritize Jianying ASR
-    use_kuaishou=True,                # Use Kuaishou ASR
-    use_bcut=True,                    # Use BCut ASR
-    format_text=True,                 # Format text
-    include_timestamps=True,          # Include timestamps
-    show_progress=True,               # Show progress bars
-    process_video=True,               # Process video files
-    extract_audio_only=False,         # Extract audio only
-    watch_mode=False                  # Watch mode
-)
+Basic usage:
+```bash
+python main.py -m /path/to/media -o /path/to/output
 ```
 
-## Watch Mode
+Arguments:
+- `-c, --config`: Configuration file path (default: config.json)
+- `-m, --media-folder`: Media folder path
+- `-o, --output-folder`: Output folder path
+- `-w, --watch`: Enable watch mode
+- `--no-video`: Don't process video files
+- `--extract-only`: Only extract audio
+- `--no-progress`: Don't show progress bars
+- `--no-timestamps`: Don't include timestamps
+- `--debug`: Enable debug mode
 
-Watch mode continuously monitors the media folder and automatically processes new audio or video files when detected:
+### Configuration File
 
-- Real-time monitoring of new files
-- Automatically starts processing
-- Avoids reprocessing completed files
+Configure options in config.json:
+
+```json
+{
+    "media_folder": "./media",          # Media folder path
+    "output_folder": "./output",        # Output folder path
+    "max_retries": 3,                   # Maximum retry attempts
+    "max_workers": 4,                   # Maximum concurrent worker threads
+    "use_jianying_first": true,         # Prioritize Jianying ASR
+    "use_kuaishou": true,              # Use Kuaishou ASR
+    "use_bcut": true,                  # Use Bcut ASR
+    "format_text": true,               # Format output text
+    "include_timestamps": true,         # Include timestamps
+    "show_progress": true,             # Show progress bars
+    "process_video": true,             # Process video files
+    "extract_audio_only": false,        # Only extract audio
+    "watch_mode": false,               # Watch mode
+    "segment_length": 30,              # Audio segment length (seconds)
+    "max_segment_length": 2000,        # Maximum text segment length
+    "min_segment_length": 10,          # Minimum text segment length
+    "retry_delay": 1.0,               # Retry delay (seconds)
+    "log_level": "INFO",              # Logging level
+    "log_file": "./output/audio_processing.log"  # Log file path
+}
+```
+
+### Examples
+
+1. Basic usage:
+```bash
+python main.py -m ./media -o ./output
+```
+
+2. Watch mode:
+```bash
+python main.py -m ./media -o ./output -w
+```
+
+3. With custom config:
+```bash
+python main.py -c my_config.json
+```
+
+4. Extract audio only:
+```bash
+python main.py -m ./media -o ./output --extract-only
+```
+
+## Output Format
+
+Text output example:
+```
+# example.mp3
+# Processed: 2023-12-25 14:30:00
+# Total segments: 10
+# Successfully transcribed: 10
+
+[00:00 - 00:30] First transcribed text segment...
+
+[00:30 - 01:00] Second transcribed text segment...
+```
+
+## Error Handling
+
+- Automatic retry of failed recognition tasks
+- Detailed error logging
+- Process can be interrupted and progress saved
+- Supports resuming from interruption
+
+## Notes
+
+1. FFmpeg is required for video processing
+2. Python 3.7+ recommended
+3. Ensure sufficient disk space for temporary files
+4. Watch mode runs until manually stopped
+
+## License
+
+MIT License
 
 # 依赖管理指南
 

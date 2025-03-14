@@ -1,0 +1,21 @@
+{
+    "media_folder": "./media",
+    "output_folder": "./output",
+    "max_retries": 3,
+    "max_workers": 4,
+    "use_jianying_first": true,
+    "use_kuaishou": true,
+    "use_bcut": true,
+    "format_text": true,
+    "include_timestamps": true,
+    "show_progress": true,
+    "process_video": true,
+    "extract_audio_only": false,
+    "watch_mode": false,
+    "segment_length": 30,
+    "max_segment_length": 2000,
+    "min_segment_length": 10,
+    "retry_delay": 1.0,
+    "log_level": "INFO",
+    "log_file": "./output/audio_processing.log"
+}

@@ -405,11 +405,6 @@ class AudioProcessor:
                 
                 logging.info(f"处理部分 {part_num}/{total_parts} (片段 {start_segment+1}-{end_segment})")
                 
-                # 使用转录管理器处理当前部分的音频片段
-                self.update_progress("file_progress", 1, f"识别音频 部分 {part_num}/{total_parts}")
-                
-                # 设置转录管理器的中断标志为False，以便重新开始
-                self.transcription_manager.set_interrupt_flag(False)
                 
                 # 调用转录管理器的transcribe_segments方法处理当前部分的片段
                 segment_indices = list(range(start_segment, end_segment))
@@ -517,9 +512,7 @@ class AudioProcessor:
             保存的输出文件路径
         """
         base_name = os.path.splitext(original_filename)[0]
-        # 获取子文件夹路径
-        output_subfolder = self.get_output_subfolder(base_name)
-        output_file = os.path.join(output_subfolder, f"{base_name}_part{part_num}.txt")
+        output_file = os.path.join(self.output_folder, f"{base_name}_part{part_num}.txt")
         
         with open(output_file, 'w', encoding='utf-8') as f:
             # 添加文件头，包含部分信息
@@ -730,9 +723,7 @@ class AudioProcessor:
         """
         # 生成输出文本文件路径
         base_name = os.path.splitext(original_filename)[0]
-        # 获取该音频文件专属的输出子文件夹
-        output_subfolder = self.get_output_subfolder(base_name)
-        output_path = os.path.join(output_subfolder, f"{base_name}.txt")
+        output_path = os.path.join(self.output_folder, f"{base_name}.txt")
         
         # 如果输出文件已存在且文件已经处理过且不是中断状态，则跳过
         if (os.path.exists(output_path) and 
@@ -993,19 +984,3 @@ class AudioProcessor:
             
         except Exception as e:
             logging.error(f"❌ {filename} 处理失败: {str(e)}")
-    
-    # 添加获取输出子文件夹的辅助方法
-    def get_output_subfolder(self, base_name: str) -> str:
-        """
-        获取音频文件对应的输出子文件夹路径
-        
-        Args:
-            base_name: 音频文件的基本名称(不含扩展名)
-            
-        Returns:
-            子文件夹的完整路径
-        """
-        # 创建以音频文件名为名的子文件夹
-        output_subfolder = os.path.join(self.output_folder, base_name)
-        os.makedirs(output_subfolder, exist_ok=True)
-        return output_subfolder

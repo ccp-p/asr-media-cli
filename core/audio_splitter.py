@@ -31,72 +31,87 @@ class AudioSplitter:
         Returns:
             分割后的片段文件列表
         """
-        filename = os.path.basename(input_path)
-        logging.info(f"正在分割 {filename} 为小片段...")
-        
-        # 确保临时目录存在
-        if not os.path.exists(self.temp_segments_dir):
-            logging.info(f"临时目录不存在，重新创建: {self.temp_segments_dir}")
-            os.makedirs(self.temp_segments_dir, exist_ok=True)
+        try:
+            filename = os.path.basename(input_path)
+            logging.info(f"正在分割 {filename} 为小片段...")
             
-        logging.info(f"使用临时目录: {self.temp_segments_dir}")
-        
-        # 加载音频文件
-        audio = AudioSegment.from_mp3(input_path)
-        
-        # 计算总时长（毫秒转秒）
-        total_duration = len(audio) // 1000
-        logging.info(f"音频总时长: {total_duration}秒")
-        
-        # 预计片段数
-        expected_segments = (total_duration + segment_length - 1) // segment_length
-        
-        # 报告初始进度
-        if self.progress_callback:
-            self.progress_callback(0, expected_segments, "准备分割音频")
-        
-        segment_files = []
-        
-        # 分割音频
-        for i, start in enumerate(range(0, total_duration, segment_length)):
-            end = min(start + segment_length, total_duration)
-            segment = audio[start*1000:end*1000]
+            # 确保临时目录存在
+            if not os.path.exists(self.temp_segments_dir):
+                logging.info(f"临时目录不存在，重新创建: {self.temp_segments_dir}")
+                os.makedirs(self.temp_segments_dir, exist_ok=True)
+                
+            logging.info(f"使用临时目录: {self.temp_segments_dir}")
             
-            # 导出为WAV格式（兼容语音识别API）
-            output_filename = f"{os.path.splitext(filename)[0]}_part{i+1:03d}.wav"
-            output_path = os.path.join(self.temp_segments_dir, output_filename)
+            # 加载音频文件，尝试直接加载，如果失败则使用format参数
+            try:
+                audio = AudioSegment.from_file(input_path)
+            except Exception as e:
+                logging.warning(f"直接加载音频失败，尝试指定格式: {str(e)}")
+                ext = os.path.splitext(input_path)[1].lower()
+                if ext == '.mp3':
+                    audio = AudioSegment.from_mp3(input_path)
+                else:
+                    # 对于其他格式，尝试使用文件扩展名作为格式
+                    format_name = ext[1:] if ext.startswith('.') else ext
+                    audio = AudioSegment.from_file(input_path, format=format_name)
             
-            # 更新进度
+            # 计算总时长（毫秒转秒）
+            total_duration = len(audio) // 1000
+            logging.info(f"音频总时长: {total_duration}秒")
+            
+            # 预计片段数
+            expected_segments = (total_duration + segment_length - 1) // segment_length
+            
+            # 报告初始进度
+            if self.progress_callback:
+                self.progress_callback(0, expected_segments, "准备分割音频")
+            
+            segment_files = []
+            
+            # 分割音频
+            for i, start in enumerate(range(0, total_duration, segment_length)):
+                end = min(start + segment_length, total_duration)
+                segment = audio[start*1000:end*1000]
+                
+                # 导出为WAV格式（兼容语音识别API）
+                output_filename = f"{os.path.splitext(filename)[0]}_part{i+1:03d}.wav"
+                output_path = os.path.join(self.temp_segments_dir, output_filename)
+                
+                # 更新进度
+                if self.progress_callback:
+                    self.progress_callback(
+                        i, 
+                        expected_segments, 
+                        f"导出片段 {i+1}/{expected_segments}"
+                    )
+                
+                # 导出音频段
+                try:
+                    logging.debug(f"  ├─ 导出片段到: {output_path}")
+                    segment.export(
+                        output_path,
+                        format="wav",
+                        parameters=["-ac", "1", "-ar", "16000"]  # 单声道，16kHz采样率
+                    )
+                    segment_files.append(output_filename)
+                    logging.debug(f"  ├─ 分割完成: {output_filename}")
+                except Exception as e:
+                    logging.error(f"  ├─ 导出片段失败: {output_path}, 错误: {str(e)}")
+                    raise
+            
+            # 完成进度
             if self.progress_callback:
                 self.progress_callback(
-                    i, 
                     expected_segments, 
-                    f"导出片段 {i+1}/{expected_segments}"
+                    expected_segments, 
+                    f"完成 - {len(segment_files)} 个片段"
                 )
             
-            # 导出音频段
-            try:
-                logging.debug(f"  ├─ 导出片段到: {output_path}")
-                segment.export(
-                    output_path,
-                    format="wav",
-                    parameters=["-ac", "1", "-ar", "16000"]  # 单声道，16kHz采样率
-                )
-                segment_files.append(output_filename)
-                logging.debug(f"  ├─ 分割完成: {output_filename}")
-            except Exception as e:
-                logging.error(f"  ├─ 导出片段失败: {output_path}, 错误: {str(e)}")
-                raise
-        
-        # 完成进度
-        if self.progress_callback:
-            self.progress_callback(
-                expected_segments, 
-                expected_segments, 
-                f"完成 - {len(segment_files)} 个片段"
-            )
-        
-        return segment_files
+            return segment_files
+            
+        except Exception as e:
+            logging.error(f"分割音频失败: {filename}: {str(e)}")
+            raise
 
     def extract_audio_from_video(self, video_path: str, output_folder: str, 
                                progress_callback: Optional[Callable] = None) -> tuple:

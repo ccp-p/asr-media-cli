@@ -157,3 +157,117 @@ if __name__ == "__main__":
         traceback.print_exc()
     finally:
         logging.info("\n程序执行完毕。")
+
+"""
+音频处理工具主入口
+"""
+import os
+import sys
+import argparse
+from audio_tools.controllers import ProcessorController
+from audio_tools.core.error_handler import AudioToolsError, ConfigValidationError
+
+def parse_args():
+    """解析命令行参数"""
+    parser = argparse.ArgumentParser(description='音频处理工具')
+    
+    parser.add_argument('-c', '--config', 
+                      help='配置文件路径',
+                      default='config.json')
+    
+    parser.add_argument('-m', '--media-folder',
+                      help='媒体文件夹路径',
+                      default=None)
+    
+    parser.add_argument('-o', '--output-folder',
+                      help='输出文件夹路径',
+                      default=None)
+    
+    parser.add_argument('-w', '--watch',
+                      help='启用监听模式',
+                      action='store_true')
+    
+    parser.add_argument('--no-video',
+                      help='不处理视频文件',
+                      action='store_true')
+    
+    parser.add_argument('--extract-only',
+                      help='仅提取音频',
+                      action='store_true')
+    
+    parser.add_argument('--no-progress',
+                      help='不显示进度条',
+                      action='store_true')
+    
+    parser.add_argument('--no-timestamps',
+                      help='不包含时间戳',
+                      action='store_true')
+    
+    parser.add_argument('--debug',
+                      help='启用调试模式',
+                      action='store_true')
+    
+    return parser.parse_args()
+
+def main():
+    """主函数"""
+    args = parse_args()
+    
+    try:
+        # 创建控制器实例
+        controller = ProcessorController(config_file=args.config)
+        
+        # 根据命令行参数更新配置
+        config_updates = {}
+        
+        if args.media_folder:
+            config_updates['media_folder'] = args.media_folder
+            
+        if args.output_folder:
+            config_updates['output_folder'] = args.output_folder
+            
+        if args.watch:
+            config_updates['watch_mode'] = True
+            
+        if args.no_video:
+            config_updates['process_video'] = False
+            
+        if args.extract_only:
+            config_updates['extract_audio_only'] = True
+            
+        if args.no_progress:
+            config_updates['show_progress'] = False
+            
+        if args.no_timestamps:
+            config_updates['include_timestamps'] = False
+            
+        if args.debug:
+            config_updates['log_level'] = 'DEBUG'
+        
+        # 如果有更新，应用新配置
+        if config_updates:
+            controller.update_config(config_updates)
+        
+        # 启动处理
+        controller.start_processing()
+        
+        return 0
+        
+    except ConfigValidationError as e:
+        print(f"\n配置错误: {str(e)}", file=sys.stderr)
+        return 1
+    except AudioToolsError as e:
+        print(f"\n处理错误: {str(e)}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("\n程序已被用户中断", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"\n程序异常: {str(e)}", file=sys.stderr)
+        if args.debug:
+            import traceback
+            traceback.print_exc()
+        return 1
+
+if __name__ == '__main__':
+    sys.exit(main())
