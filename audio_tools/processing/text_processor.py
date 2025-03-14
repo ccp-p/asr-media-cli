@@ -110,9 +110,12 @@ class TextProcessor:
                         "正在格式化文本"
                     )
                 
-                full_text = self._format_text(
+                # 使用新的格式化方法
+                full_text = self.format_segment_text(
                     all_text,
-                    timestamps=all_timestamps if self.include_timestamps else None
+                    timestamps=all_timestamps if self.include_timestamps else None,
+                    include_timestamps=self.include_timestamps,
+                    paragraph_min_length=self.min_segment_length
                 )
                 
                 if self.progress_callback:
@@ -197,11 +200,186 @@ class TextProcessor:
         os.makedirs(output_subfolder, exist_ok=True)
         return output_subfolder
     
+    # 以下是参照TextFormatter实现的新方法
+    def format_segment_text(self, 
+                           segment_texts: List[str], 
+                           timestamps: Optional[List[Dict[str, float]]] = None,
+                           include_timestamps: bool = False,
+                           paragraph_min_length: int = 100,
+                           separate_segments: bool = True) -> str:
+        """
+        格式化文本段落，使其更易于阅读
+        
+        Args:
+            segment_texts: 文本片段列表
+            timestamps: 对应的时间戳信息 [{'start': 0.0, 'end': 10.5}, ...]
+            include_timestamps: 是否在输出中包含时间戳
+            paragraph_min_length: 段落的最小长度，超过此长度会被视为段落
+            separate_segments: 是否为每个30秒分片添加分隔符
+            
+        Returns:
+            格式化后的文本
+        """
+        # 如果没有文本，直接返回空字符串
+        if not segment_texts:
+            return ""
+        
+        # 根据separate_segments参数决定处理方式
+        if separate_segments:
+            # 为每个原始分片添加分隔符，保持片段独立
+            formatted_segments = []
+            for i, text in enumerate(segment_texts):
+                if not text or text == "[无法识别的音频片段]":
+                    continue
+                
+                # 处理文本：将空格替换为逗号，确保句子末尾有句号
+                processed_text = self._process_segment_text(text)
+                
+                # 添加时间戳（如果需要）
+                if include_timestamps and timestamps and i < len(timestamps):
+                    time_start = timestamps[i]['start']
+                    time_end = timestamps[i]['end']
+                    time_info = f"[{self._format_time(time_start)}-{self._format_time(time_end)}] "
+                    formatted_segments.append(f"{time_info}{processed_text}")
+                else:
+                    formatted_segments.append(processed_text)
+                    
+            # 用新行分隔每个片段
+            return "\n\n".join(formatted_segments)
+        else:
+            # 原来的处理方式，合并所有文本并替换无法识别的部分
+            raw_text = " ".join([text for text in segment_texts if text and text != "[无法识别的音频片段]"])
+            if not raw_text:
+                return "[未能成功识别任何内容]"
+            
+            # 移除多余的空格
+            raw_text = re.sub(r'\s+', ' ', raw_text).strip()
+            
+            # 基于标点符号和句子长度智能分段
+            formatted_paragraphs = self._split_into_paragraphs(raw_text, paragraph_min_length)
+            
+            # 如果需要包含时间戳且提供了时间戳信息
+            if include_timestamps and timestamps:
+                return self._add_timestamps(formatted_paragraphs, timestamps)
+            
+            return "\n\n".join(formatted_paragraphs)
+    
+    def _process_segment_text(self, text: str) -> str:
+        """
+        处理每个30秒片段的文本:
+        1. 将空格替换为逗号
+        2. 确保句子末尾有句号
+        """
+        # 移除多余的空格，保留单词间的空格
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        # 中文内容中替换空格为逗号
+        # 匹配汉字之间的空格
+        text = re.sub(r'([\u4e00-\u9fa5])\s+([\u4e00-\u9fa5])', r'\1，\2', text)
+        
+        # 处理句尾标点
+        last_char = text[-1] if text else ""
+        if last_char not in ["。", "！", "？", ".", "!", "?"]:
+            text += "。"  # 添加句号
+        
+        return text
+    
+    def _split_into_paragraphs(self, text: str, min_length: int = 100) -> List[str]:
+        """
+        智能地将文本分割成段落
+        
+        1. 优先在句号、问号、感叹号+空格处分段
+        2. 考虑段落长度，过长的段落会被再次分割
+        3. 规范标点符号前后的空格
+        """
+        # 中文句子结束标志
+        sentence_end_pattern = r'([。！？\.\!\?]+)(\s*)'
+        
+        # 首先规范化标点符号
+        text = re.sub(sentence_end_pattern, r'\1 ', text)
+        
+        # 按句子分割
+        sentences = re.split(sentence_end_pattern, text)
+        # 过滤空字符串并重组句子
+        cleaned_sentences = []
+        current_sentence = ""
+        
+        for i in range(0, len(sentences), 3):
+            if i < len(sentences):
+                current_sentence = sentences[i]
+                if i+1 < len(sentences):
+                    current_sentence += sentences[i+1]  # 添加标点
+                cleaned_sentences.append(current_sentence)
+        
+        # 合并短句子形成段落
+        paragraphs = []
+        current_paragraph = ""
+        
+        for sentence in cleaned_sentences:
+            if not sentence.strip():
+                continue
+                
+            if len(current_paragraph) + len(sentence) > min_length and current_paragraph:
+                paragraphs.append(current_paragraph.strip())
+                current_paragraph = sentence
+            else:
+                current_paragraph = (current_paragraph + " " + sentence).strip()
+        
+        # 添加最后一个段落
+        if current_paragraph:
+            paragraphs.append(current_paragraph.strip())
+        
+        return paragraphs
+    
+    def _add_timestamps(self, paragraphs: List[str], timestamps: List[Dict[str, float]]) -> str:
+        """
+        为段落添加时间戳
+        
+        Args:
+            paragraphs: 文本段落列表
+            timestamps: 对应的时间戳信息 [{'start': 0.0, 'end': 10.5}, ...]
+            
+        Returns:
+            包含时间戳的格式化文本
+        """
+        if not timestamps or len(timestamps) == 0:
+            return "\n\n".join(paragraphs)
+        
+        # 添加总时长信息
+        total_duration = timestamps[-1].get('end', 0) - timestamps[0].get('start', 0)
+        header = f"【总时长: {self._format_time(total_duration)}】\n\n"
+        
+        # 给每个段落添加时间范围
+        segment_length = total_duration / len(paragraphs)
+        timestamped_paragraphs = []
+        
+        for i, paragraph in enumerate(paragraphs):
+            start_time = i * segment_length
+            end_time = (i + 1) * segment_length
+            
+            time_info = f"[{self._format_time(start_time)}-{self._format_time(end_time)}]"
+            timestamped_paragraphs.append(f"{time_info} {paragraph}")
+        
+        return header + "\n\n".join(timestamped_paragraphs)
+    
+    def _format_time(self, seconds: float) -> str:
+        """
+        将秒数格式化为 mm:ss 格式
+        """
+        m, s = divmod(int(seconds), 60)
+        h, m = divmod(m, 60)
+        
+        if h > 0:
+            return f"{h:02d}:{m:02d}:{s:02d}"
+        else:
+            return f"{m:02d}:{s:02d}"
+    
+    # 保留原有方法作为接口兼容，但内部使用新的实现
     def _format_text(self, 
                     texts: List[str], 
                     timestamps: Optional[List[Dict[str, int]]] = None) -> str:
         """
-        格式化文本片段
+        格式化文本片段 - 兼容旧接口，实际使用新实现
         
         Args:
             texts: 文本片段列表
@@ -210,94 +388,19 @@ class TextProcessor:
         Returns:
             格式化后的文本
         """
-        formatted_segments = []
-        current_segment = []
-        current_length = 0
-        
-        for i, text in enumerate(texts):
-            if not text or text == "[无法识别的音频片段]":
-                continue
-            
-            # 分割过长的句子
-            sentences = self._split_into_sentences(text)
-            
-            for sentence in sentences:
-                sentence = sentence.strip()
-                if not sentence:
-                    continue
-                    
-                # 如果当前段落加上新句子会超过最大长度，保存当前段落并开始新段落
-                if current_length + len(sentence) > self.max_segment_length and current_length >= self.min_segment_length:
-                    if current_segment:
-                        segment_text = " ".join(current_segment)
-                        # 添加时间戳
-                        if timestamps and self.include_timestamps:
-                            timestamp = timestamps[i]
-                            time_str = self._format_timestamp(timestamp)
-                            formatted_segments.append(f"{time_str} {segment_text}")
-                        else:
-                            formatted_segments.append(segment_text)
-                        current_segment = []
-                        current_length = 0
-                
-                current_segment.append(sentence)
-                current_length += len(sentence)
-        
-        # 处理最后一个段落
-        if current_segment:
-            segment_text = " ".join(current_segment)
-            if timestamps and self.include_timestamps and timestamps[-1]:
-                time_str = self._format_timestamp(timestamps[-1])
-                formatted_segments.append(f"{time_str} {segment_text}")
-            else:
-                formatted_segments.append(segment_text)
-        
-        return "\n\n".join(formatted_segments)
-    
-    def _split_into_sentences(self, text: str) -> List[str]:
-        """
-        将文本分割成句子
-        
-        Args:
-            text: 要分割的文本
-            
-        Returns:
-            句子列表
-        """
-        # 使用正则表达式分割句子，保留标点符号
-        sentences = re.split(r'([。！？.!?]+)', text)
-        
-        # 重新组合句子和标点
-        result = []
-        i = 0
-        while i < len(sentences) - 1:
-            if sentences[i].strip():
-                sentence = sentences[i] + (sentences[i + 1] if i + 1 < len(sentences) else "")
-                result.append(sentence.strip())
-            i += 2
-            
-        # 处理最后一个句子
-        if i < len(sentences) and sentences[i].strip():
-            result.append(sentences[i].strip())
-        
-        return result
+        return self.format_segment_text(
+            texts,
+            timestamps=timestamps,
+            include_timestamps=self.include_timestamps,
+            paragraph_min_length=self.min_segment_length,
+            separate_segments=False
+        )
     
     def _format_timestamp(self, timestamp: Dict[str, int]) -> str:
         """
-        格式化时间戳
-        
-        Args:
-            timestamp: 包含开始和结束时间的字典
-            
-        Returns:
-            格式化的时间戳字符串
+        格式化时间戳 - 保留兼容旧接口
         """
-        minutes_start = timestamp['start'] // 60
-        seconds_start = timestamp['start'] % 60
-        minutes_end = timestamp['end'] // 60
-        seconds_end = timestamp['end'] % 60
-        
-        return f"[{minutes_start:02d}:{seconds_start:02d} - {minutes_end:02d}:{seconds_end:02d}]"
+        return f"[{self._format_time(timestamp['start'])}-{self._format_time(timestamp['end'])}]"
     
     def _generate_metadata_header(self, metadata: Dict[str, Any]) -> str:
         """

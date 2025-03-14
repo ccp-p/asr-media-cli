@@ -258,7 +258,6 @@ class FileProcessor:
             output_file = self.text_processor.save_result_text(
                 text=result_text,
                 filename=filename,
-                metadata=metadata
             )
             
             if self.progress_callback:
