@@ -1,21 +1,28 @@
 import os
 import logging
 import sys
+
+from tqdm import tqdm
 from audio_tools.core.audio_extractor import AudioExtractor
 from audio_tools.controllers.processor_controller import ProcessorController
 from audio_tools.core.file_utils import check_ffmpeg_available
 
-def setup_logging():
-    """配置日志"""
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler(os.path.join('output', 'audio_processing.log'), encoding='utf-8')
-        ]
-    )
 
+class TqdmLoggingHandler(logging.Handler):
+    """让日志与tqdm进度条兼容的处理器"""
+    
+    def __init__(self, level=logging.NOTSET):
+        super().__init__(level)
+        self.formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            # 使用tqdm.write而不是print，这样不会干扰进度条
+            tqdm.write(msg)
+            self.flush()
+        except Exception:
+            self.handleError(record)
 def check_dependencies():
     """检查所需依赖是否已安装"""
     required_modules = {
@@ -48,7 +55,30 @@ def check_dependencies():
         return False
     
     return True
-
+def setup_logging(log_file=None):
+    """配置日志系统，使其与tqdm兼容"""
+    # 创建日志器
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    
+    # 清除所有现有处理器
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+    
+    # 添加tqdm兼容的控制台处理器
+    console_handler = TqdmLoggingHandler()
+    console_handler.setLevel(logging.INFO)
+    logger.addHandler(console_handler)
+    
+    # 如果指定了日志文件，添加文件处理器
+    if log_file:
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(file_handler)
+    
+    return logger
 def main():
     # 设置日志
     setup_logging()
