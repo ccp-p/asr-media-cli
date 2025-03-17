@@ -13,6 +13,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 from audio_tools.processing.text_processor import TextProcessor
+from core.utils import load_json_file
 from ..core.audio_extractor import AudioExtractor
 
 class AudioFileHandler(FileSystemEventHandler):
@@ -136,7 +137,8 @@ class FileProcessor:
         self.format_text = format_text
         self.include_timestamps = include_timestamps
         self.max_retries = max_retries
-        
+        self.processed_record_file = os.path.join(self.output_folder, "processed_audio_files.json")
+        self.processed_audio = load_json_file(self.processed_record_file)
         # 创建输出目录
         os.makedirs(output_folder, exist_ok=True)
         
@@ -150,6 +152,10 @@ class FileProcessor:
             include_timestamps=include_timestamps,
             progress_callback=progress_callback
         )
+    def _is_recognized_file(self, filepath: str) -> bool:
+        """检查文件是否已处理过"""
+        filename = os.path.basename(filepath)
+        return filename in self.processed_audio
     
     def process_file(self, filepath: str) -> bool:
         """
@@ -166,7 +172,10 @@ class FileProcessor:
         
         try:
             # 处理视频文件 - 需要先提取音频
-            if file_extension in self.video_extensions:
+            if self._is_recognized_file(filepath):
+                logging.info(f"文件已处理过: {filename}跳过")
+                return True
+            elif file_extension in self.video_extensions:
                 return self._process_video_file(filepath)
             # 处理音频文件
             elif file_extension == '.mp3':
