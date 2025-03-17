@@ -154,8 +154,20 @@ class FileProcessor:
         )
     def _is_recognized_file(self, filepath: str) -> bool:
         """检查文件是否已处理过"""
-        filename = os.path.basename(filepath)
-        return filename in self.processed_audio
+        # 如果输出文件已存在且文件已经处理过
+        base_name = os.path.splitext(os.path.basename(filepath))[0]
+        
+        output_path = os.path.join(self.output_folder, f"{base_name}.txt")
+        
+        audio_path = os.path.join(self.output_folder, f"{base_name}.mp3")
+        # os.path.normpath(audio_path)
+        isSamePath = lambda x: os.path.normpath(x)
+        isInFile = [isSamePath(audio_path) == isSamePath(key) for key in self.processed_audio.keys()]
+        
+        res = any([os.path.exists(output_path), any(isInFile)])
+        return res
+        
+        
     
     def process_file(self, filepath: str) -> bool:
         """
