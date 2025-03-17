@@ -159,13 +159,12 @@ class TextProcessor:
         """
         try:
             base_name = os.path.splitext(filename)[0]
-            output_subfolder = self.get_output_subfolder(base_name)
             
             if part_num is not None:
+                output_subfolder = self.get_output_subfolder(base_name)
                 output_file = os.path.join(output_subfolder, f"{base_name}_part{part_num}.txt")
             else:
-                output_file = os.path.join(output_subfolder, f"{base_name}.txt")
-            
+                output_file = os.path.join(self.output_folder, f"{base_name}.txt")
             # 准备文件头信息
             header = f"# {base_name}"
             if part_num is not None:
