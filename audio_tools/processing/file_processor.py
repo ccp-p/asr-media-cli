@@ -13,7 +13,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 from audio_tools.processing.text_processor import TextProcessor
-from core.utils import load_json_file
+from core.utils import load_json_file, save_json_file
 from ..core.audio_extractor import AudioExtractor
 
 class AudioFileHandler(FileSystemEventHandler):
@@ -277,12 +277,22 @@ class FileProcessor:
                 )
                 
             logging.info(f"转写结果已保存到: {output_file}")
+            
+            # self.processed_files[audio_path]["processed_parts"].append(part_num)
+            # self.processed_files[audio_path]["total_parts"] = total_parts
+            self.processed_files[audio_path]["last_processed_time"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            # self.processed_files[audio_path]["part_stats"] = part_stats
+                
+            self._save_processed_records()
             return True
             
         except Exception as e:
             logging.error(f"处理音频文件时出错 {filename}: {str(e)}")
             return False
-    
+    def _save_processed_records(self):
+        """保存已处理的文件记录"""
+        save_json_file(self.processed_record_file, self.processed_audio)
+
     def start_file_monitoring(self) -> 'Observer':
         """
         启动文件监控

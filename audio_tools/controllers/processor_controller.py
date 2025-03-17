@@ -253,6 +253,7 @@ class ProcessorController:
             if self.config['watch_mode']:
                  # 处理已有文件
                 self._process_existing_files()
+                
                 self._start_watch_mode()
             else:
                 self._process_existing_files()
