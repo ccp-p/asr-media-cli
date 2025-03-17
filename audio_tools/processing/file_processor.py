@@ -274,7 +274,7 @@ class FileProcessor:
             logging.error(f"处理音频文件时出错 {filename}: {str(e)}")
             return False
     
-    def start_file_monitoring(self) -> Observer:
+    def start_file_monitoring(self) -> 'Observer':
         """
         启动文件监控
         
