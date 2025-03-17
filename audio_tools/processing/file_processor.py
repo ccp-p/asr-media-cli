@@ -3,6 +3,7 @@
 负责文件的监控和处理流程
 """
 import os
+import threading
 import time
 import logging
 import traceback
@@ -17,20 +18,14 @@ from core.utils import load_json_file, save_json_file
 from ..core.audio_extractor import AudioExtractor
 
 class AudioFileHandler(FileSystemEventHandler):
-    """音频文件监控处理器"""
-    
-    def __init__(self, processor, extensions=None):
-        """
-        初始化文件处理器
-        
-        Args:
-            processor: 处理器实例
-            extensions: 要监听的文件扩展名列表
-        """
+    def __init__(self, processor, extensions=None, debounce_seconds=5):
+        super().__init__()
         self.processor = processor
         self.audio_extensions = extensions or ['.mp3', '.wav', '.m4a', '.flac', '.ogg', '.aac', '.mp4']
         self.processing_queue = Queue()
         self.processed_files = set()  # 已处理的文件跟踪
+        self.pending_files = {}  # 等待处理的文件及其定时器
+        self.debounce_seconds = debounce_seconds
         self._start_worker_thread()
     
     def on_created(self, event):
@@ -39,8 +34,7 @@ class AudioFileHandler(FileSystemEventHandler):
         
     def on_modified(self, event):
         """当文件被修改时触发"""
-        # 我们不处理修改事件，因为创建时已经处理了文件
-        pass
+        self._handle_file_event(event.src_path)
     
     def _is_audio_file(self, filepath):
         """检查文件是否是支持的音频文件类型"""
@@ -50,18 +44,50 @@ class AudioFileHandler(FileSystemEventHandler):
         return ext.lower() in self.audio_extensions
     
     def _handle_file_event(self, filepath):
-        """处理文件事件的统一入口"""
-        # 如果不是音频文件或已在队列中，则跳过
+        """处理文件事件的统一入口，使用防抖动技术"""
+        # 如果不是音频文件或已在处理队列中，则跳过
         if not self._is_audio_file(filepath) or filepath in self.processed_files:
             return
-            
-        # 添加到已处理文件集合
-        self.processed_files.add(filepath)
-        logging.info(f"检测到新音频文件：{filepath}")
         
-        # 将文件添加到处理队列
+        # 取消之前为此文件设置的任何待处理定时器
+        if filepath in self.pending_files:
+            self.pending_files[filepath].cancel()
+        
+        # 设置新的定时器
+        timer = threading.Timer(
+            self.debounce_seconds, 
+            self._add_to_processing_queue, 
+            args=[filepath]
+        )
+        timer.daemon = True
+        self.pending_files[filepath] = timer
+        timer.start()
+        
+        logging.debug(f"文件事件触发，设置处理延时: {filepath}")
+    
+    def _add_to_processing_queue(self, filepath):
+        """将文件添加到处理队列"""
+        # 检查文件是否仍然存在
+        if not os.path.exists(filepath):
+            if filepath in self.pending_files:
+                del self.pending_files[filepath]
+            return
+        
+        # 从待处理列表中移除
+        if filepath in self.pending_files:
+            del self.pending_files[filepath]
+        
+        # 检查文件是否已在已处理列表中
+        if filepath in self.processed_files:
+            return
+        
+        # 添加到已处理列表
+        self.processed_files.add(filepath)
+        
+        logging.info(f"添加文件到处理队列: {filepath}")
         self.processing_queue.put(filepath)
     
+
     def _start_worker_thread(self):
         """启动工作线程处理文件队列"""
         def worker():
@@ -94,7 +120,46 @@ class AudioFileHandler(FileSystemEventHandler):
         # 创建并启动工作线程
         thread = Thread(target=worker, daemon=True)
         thread.start()
-
+        
+    def _update_processed_records_on_rename(self, old_path, new_path):
+        """当文件重命名时更新处理记录"""
+        if old_path in self.processed_audio:
+            # 将记录从旧路径转移到新路径
+            self.processed_audio[new_path] = self.processed_audio.pop(old_path)
+            logging.info(f"已更新处理记录: {old_path} -> {new_path}")
+            self._save_processed_records()
+    
+    def on_moved(self, event):
+        """当文件被移动或重命名时触发"""
+        # 获取源路径和目标路径
+        src_path = event.src_path
+        dest_path = event.dest_path
+        
+        # 忽略目录事件
+        if os.path.isdir(dest_path):
+            return
+            
+        logging.info(f"文件移动/重命名: {os.path.basename(src_path)} -> {os.path.basename(dest_path)}")
+        
+        # 如果源文件在已处理列表中，需要更新记录
+        if src_path in self.processed_files:
+            self.processed_files.remove(src_path)
+            logging.debug(f"从已处理列表中移除原文件: {src_path}")
+        
+        # 如果源文件在待处理列表中，需要取消定时器并移除
+        if src_path in self.pending_files:
+            self.pending_files[src_path].cancel()
+            del self.pending_files[src_path]
+            logging.debug(f"已取消源文件的待处理定时器: {src_path}")
+        
+        # 检查目标文件是否是需要处理的文件类型
+        if self._is_audio_file(dest_path):
+            # 更新处理器中的记录（如果适用）
+            if hasattr(self.processor, '_update_processed_records_on_rename'):
+                self.processor._update_processed_records_on_rename(src_path, dest_path)
+                
+            # 将目标文件当作新文件处理
+            self._handle_file_event(dest_path)
 class FileProcessor:
     """文件处理器，负责整体文件处理流程"""
     
@@ -157,14 +222,14 @@ class FileProcessor:
         # 如果输出文件已存在且文件已经处理过
         base_name = os.path.splitext(os.path.basename(filepath))[0]
         
-        output_path = os.path.join(self.output_folder, f"{base_name}.txt")
         
         audio_path = os.path.join(self.output_folder, f"{base_name}.mp3")
-        # os.path.normpath(audio_path)
-        isSamePath = lambda x: os.path.normpath(x)
-        isInFile = [isSamePath(audio_path) == isSamePath(key) for key in self.processed_audio.keys()]
         
-        res = any([os.path.exists(output_path), any(isInFile)])
+        isSamePath = lambda x,y: os.path.normpath(x)  == os.path.normpath(y)
+        
+        isInFile = [ isSamePath(audio_path,key) for key in self.processed_audio.keys()]
+        
+        res = any([ any(isInFile)])
         return res
         
         
@@ -292,6 +357,8 @@ class FileProcessor:
             
             # self.processed_files[audio_path]["processed_parts"].append(part_num)
             # self.processed_files[audio_path]["total_parts"] = total_parts
+            if(audio_path not in self.processed_audio):
+                self.processed_audio[audio_path] = {}
             self.processed_audio[audio_path]["last_processed_time"] = time.strftime("%Y-%m-%d %H:%M:%S")
             # self.processed_files[audio_path]["part_stats"] = part_stats
                 
@@ -299,6 +366,9 @@ class FileProcessor:
             return True
             
         except Exception as e:
+            # track
+            import traceback
+            traceback.print_exc()
             logging.error(f"处理音频文件时出错 {filename}: {str(e)}")
             return False
     def _save_processed_records(self):
