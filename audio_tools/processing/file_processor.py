@@ -280,7 +280,7 @@ class FileProcessor:
             
             # self.processed_files[audio_path]["processed_parts"].append(part_num)
             # self.processed_files[audio_path]["total_parts"] = total_parts
-            self.processed_files[audio_path]["last_processed_time"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            self.processed_audio[audio_path]["last_processed_time"] = time.strftime("%Y-%m-%d %H:%M:%S")
             # self.processed_files[audio_path]["part_stats"] = part_stats
                 
             self._save_processed_records()
