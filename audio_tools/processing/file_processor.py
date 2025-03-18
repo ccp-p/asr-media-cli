@@ -361,8 +361,11 @@ class FileProcessor:
                 self.processed_audio[audio_path] = {}
             self.processed_audio[audio_path]["last_processed_time"] = time.strftime("%Y-%m-%d %H:%M:%S")
             # self.processed_files[audio_path]["part_stats"] = part_stats
-                
+
             self._save_processed_records()
+            
+            os.remove(audio_path)
+
             return True
             
         except Exception as e:
