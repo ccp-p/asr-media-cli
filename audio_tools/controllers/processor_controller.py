@@ -151,7 +151,7 @@ class ProcessorController:
             
         # 使用固定的进度条名称
         progress_name = f"{context}_progress" if context else "main_progress"
-
+        progress_bar = self.progress_manager.get_progress_bar(progress_name)
         # 创建或更新对应的进度条
         if not self.progress_manager.has_progress_bar(progress_name):
             prefix = f"{context or '处理'}"
@@ -160,7 +160,11 @@ class ProcessorController:
                 total,
                 prefix,
             )
-        
+        # 对比bar的值 如果total值 以total的值为准，更新
+        if  progress_bar  and progress_bar.total != total:
+            progress_bar.reset(total)
+           
+            
         # 更新进度
         self.progress_manager.update_progress(
             progress_name,

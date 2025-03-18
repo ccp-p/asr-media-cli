@@ -244,3 +244,15 @@ class ProgressManager:
         for name in list(self.progress_bars.keys()):
             self.finish_progress(name, final_message)
         self.progress_bars.clear()
+    def get_progress_bar(self, name: str) -> Optional[ProgressBar]:
+        """
+        获取指定名称的进度条
+        
+        Args:
+            name: 进度条名称
+            
+        Returns:
+            进度条对象
+        """
+        return self.progress_bars.get(name)
+    

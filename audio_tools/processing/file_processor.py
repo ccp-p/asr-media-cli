@@ -492,9 +492,9 @@ class FileProcessor:
             # self.processed_files[audio_path]["part_stats"] = part_stats
 
             self._save_processed_records()
-
+            # 删除音频文件
             os.remove(audio_path)
-
+            logging.info(f"删除音频文件: {audio_path}")
             return True
             
         except Exception as e:
