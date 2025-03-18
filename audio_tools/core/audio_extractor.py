@@ -51,7 +51,7 @@ class AudioExtractor:
         
         # 报告初始进度
         if self.progress_callback:
-            self.progress_callback(0, expected_segments, "准备分割音频")
+            self.progress_callback(0, expected_segments, "准备分割音频",)
         
         segment_files = []
         

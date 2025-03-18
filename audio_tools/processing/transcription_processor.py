@@ -131,7 +131,8 @@ class TranscriptionProcessor:
                     self.progress_callback(
                         completed_count,
                         total_segments,
-                     f"{completed_count}/{total_segments} 片段完成，{len(active_futures)} 个处理中..."
+                     f"{completed_count}/{total_segments} 片段完成，{len(active_futures)} 个处理中...",
+                     "segment"
                     )
                 
                 # 周期性检查卡住的任务

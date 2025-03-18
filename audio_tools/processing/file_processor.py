@@ -354,10 +354,11 @@ class FileProcessor:
             
             # 显示进度
             if self.progress_callback:
+                
                 self.progress_callback(
                     i,
                     total_pending,
-                    f"处理Part {part_idx+1}/{file_record['total_parts']}"
+                    f"处理Part {part_idx+1}/{file_record['total_parts']}",
                 )
             
             # 处理这个part的所有片段

@@ -104,11 +104,8 @@ class TextProcessor:
             # 格式化文本
             if self.format_text:
                 if self.progress_callback:
-                    self.progress_callback(
-                        0,
-                        1,
-                        "正在格式化文本"
-                    )
+                    self.progress_callback(0, 1, "正在格式化文本", "file")
+                
                 
                 # 使用新的格式化方法
                 full_text = self.format_segment_text(

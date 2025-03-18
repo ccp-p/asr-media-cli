@@ -132,7 +132,7 @@ class ProcessorController:
         # 打印统计信息
         self._print_final_stats()
     
-    def _progress_callback(self,  current: int, total: int, message: Optional[str] = None):
+    def _progress_callback(self,  current: int, total: int, message: Optional[str] = None,context: Optional[str] = None):
         """
         进度回调处理 - 接受但忽略state参数
         
@@ -140,6 +140,7 @@ class ProcessorController:
             current: 当前进度
             total: 总进度
             message: 可选的进度消息
+            context: 上下文标识符，用于区分不同的处理层级
         """
         if not self.config.get('show_progress', True):
             return
@@ -149,14 +150,16 @@ class ProcessorController:
             message = f"处理进度: {current}/{total}"
             
         # 使用固定的进度条名称
-        progress_name = "processing_progress"
-            
+        progress_name = f"{context}_progress" if context else "main_progress"
+
         # 创建或更新对应的进度条
         if not self.progress_manager.has_progress_bar(progress_name):
+            prefix = f"{context or '处理'}"
             self.progress_manager.create_progress_bar(
                 progress_name,
                 total,
-                "处理进度"
+                prefix,
+               
             )
         
         # 更新进度
