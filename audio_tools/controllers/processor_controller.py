@@ -159,7 +159,6 @@ class ProcessorController:
                 progress_name,
                 total,
                 prefix,
-               
             )
         
         # 更新进度

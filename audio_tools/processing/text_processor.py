@@ -104,7 +104,7 @@ class TextProcessor:
             # 格式化文本
             if self.format_text:
                 if self.progress_callback:
-                    self.progress_callback(0, 1, "正在格式化文本", "file")
+                    self.progress_callback(0, 1, "正在格式化文本")
                 
                 
                 # 使用新的格式化方法
