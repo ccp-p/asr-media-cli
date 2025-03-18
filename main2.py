@@ -106,7 +106,7 @@ def main():
             show_progress=True,
             process_video=True,
             extract_audio_only=False,
-            watch_mode=True
+            watch_mode=True,
         )
         
         # 开始处理

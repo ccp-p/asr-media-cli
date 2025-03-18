@@ -45,10 +45,11 @@ class ProgressBar:
         if self.current + n > self.total:
             logging.warning(f"进度超出总量: current={self.current}, update={n}, total={self.total}")
             n = self.total - self.current
-            
-        self.current += n
-        if self.pbar:
-            self.pbar.update(n)
+        
+        if n > 0:  # 只有在有实际增量时才更新
+            self.current += n
+            if self.pbar:
+                self.pbar.update(n)
     
     def set_description(self, desc: str, refresh: bool = True):
         """
@@ -170,10 +171,26 @@ class ProgressManager:
             
         progress_bar = self.progress_bars[name]
         
-        if current is not None:
-            progress = current - progress_bar.current
-            if progress > 0:
-                progress_bar.update(progress)
+        if current < 0:
+            logging.warning(f"进度值不能为负数: {current}")
+        elif current > progress_bar.total:
+            logging.warning(f"进度值超出总量: current={current}, total={progress_bar.total}")
+            # 设置到最大值
+            if progress_bar.current != progress_bar.total:
+                # 计算需要更新的增量
+                progress_bar.update(progress_bar.total - progress_bar.current)
+        else:
+            # 处理进度回退情况
+            if current < progress_bar.current:
+                # 需要重置进度条
+                logging.debug(f"进度条回退: current={progress_bar.current}, new={current}")
+                progress_bar.reset(total=progress_bar.total)
+                progress_bar.update(current)
+            else:
+                # 正常增量更新
+                progress = current - progress_bar.current
+                if progress > 0:  # 仍然需要确认增量为正
+                    progress_bar.update(progress)
         
         if message is not None:  # Changed from 'if message:' to handle empty strings properly
             description = f"{progress_bar.description.split(' - ')[0]}"

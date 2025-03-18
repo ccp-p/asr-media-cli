@@ -13,6 +13,7 @@ from typing import Set, Optional, Callable
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
+from asr.utils import get_audio_duration
 from audio_tools.processing.text_processor import TextProcessor
 from core.utils import load_json_file, save_json_file
 from ..core.audio_extractor import AudioExtractor
@@ -173,6 +174,7 @@ class FileProcessor:
                 process_video: bool = True,
                 extract_audio_only: bool = False,
                 format_text: bool = True,
+                max_part_time: int = 20,
                 include_timestamps: bool = True,
                 max_retries: int = 3):
         """
@@ -193,6 +195,7 @@ class FileProcessor:
         """
         self.media_folder = media_folder
         self.output_folder = output_folder
+        self.max_part_time= max_part_time
         self.temp_segments_dir = temp_segments_dir
         self.transcription_processor = transcription_processor
         self.audio_extractor = audio_extractor
@@ -204,6 +207,7 @@ class FileProcessor:
         self.max_retries = max_retries
         self.processed_record_file = os.path.join(self.output_folder, "processed_audio_files.json")
         self.processed_audio = load_json_file(self.processed_record_file)
+        self.interrupt_received = False
         # 创建输出目录
         os.makedirs(output_folder, exist_ok=True)
         
@@ -217,6 +221,12 @@ class FileProcessor:
             include_timestamps=include_timestamps,
             progress_callback=progress_callback
         )
+    def set_interrupt_flag(self, value=True):
+        """设置中断标志"""
+        self.interrupt_received = value
+        # 传递给转写处理器
+        if hasattr(self.transcription_processor, 'set_interrupt_flag'):
+            self.transcription_processor.set_interrupt_flag(value)
     def _is_recognized_file(self, filepath: str) -> bool:
         """检查文件是否已处理过"""
         # 如果输出文件已存在且文件已经处理过
@@ -290,11 +300,129 @@ class FileProcessor:
         
         # 继续处理提取出的音频文件
         return self._process_audio_file(audio_path)
-    
+    def _process_large_audio_file(self, audio_path: str, audio_duration: float) -> bool:
+        """
+        处理大音频文件，按part分段处理
+        
+        Args:
+            audio_path: 音频文件路径
+            audio_duration: 音频时长(秒)
+            
+        Returns:
+            是否处理成功
+        """
+        from .part_manager import PartManager
+        
+        filename = os.path.basename(audio_path)
+        logging.info(f"检测到大音频文件: {filename}，长度: {audio_duration/60:.1f}分钟，开始分part处理")
+        
+        # 创建Part管理器
+        part_manager = PartManager(self.output_folder)
+        
+        # 获取part信息和待处理part
+        file_record, pending_parts = part_manager.get_parts_for_audio(
+            audio_path, audio_duration, self.processed_audio
+        )
+        
+        # 如果所有part都已完成，创建索引文件并返回
+        if not pending_parts:
+            logging.info(f"音频 {filename} 所有part已处理完成")
+            index_file = part_manager.create_index_file(audio_path, self.processed_audio)
+            self._save_processed_records()
+            return True
+        
+        # 分割音频为片段
+        segment_files = self.audio_extractor.split_audio_file(audio_path)
+        if not segment_files:
+            logging.error(f"分割音频失败: {filename}")
+            return False
+        
+        # 依次处理每个pending的part
+        total_pending = len(pending_parts)
+        for i, part_idx in enumerate(pending_parts):
+            if self.interrupt_received:
+                logging.warning(f"处理被中断，已完成 {i}/{total_pending} 个待处理part")
+                break
+                
+            # 获取这个part的片段文件
+            part_segments = part_manager.get_segments_for_part(
+                part_idx, segment_files
+            )
+            
+            logging.info(f"处理Part {part_idx+1}/{file_record['total_parts']}，" +
+                    f"包含 {len(part_segments)} 个片段")
+            
+            # 显示进度
+            if self.progress_callback:
+                self.progress_callback(
+                    i,
+                    total_pending,
+                    f"处理Part {part_idx+1}/{file_record['total_parts']}"
+                )
+            
+            # 处理这个part的所有片段
+            segment_results = self.transcription_processor.process_audio_segments(part_segments)
+            
+            # 重试失败的片段
+            if segment_results:
+                segment_results = self.transcription_processor.retry_failed_segments(
+                    part_segments, segment_results
+                )
+            
+            # 准备part的文本内容
+            start_time, end_time = part_manager.get_part_time_range(part_idx)
+            part_metadata = {
+                "原始文件": filename,
+                "Part编号": f"{part_idx+1}/{file_record['total_parts']}",
+                "时间范围": f"{start_time/60:.1f}-{min(end_time, audio_duration)/60:.1f}分钟",
+                "处理时间": time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            
+            part_text = self.text_processor.prepare_result_text(
+                segment_files=part_segments,
+                segment_results=segment_results,
+                metadata=part_metadata
+            )
+            
+            # 保存part的文本
+            if part_text:
+                output_file = part_manager.save_part_text(
+                    audio_path, part_idx, part_text, self.processed_audio
+                )
+                logging.info(f"Part {part_idx+1} 转写结果已保存: {output_file}")
+                
+                # 保存进度
+                self._save_processed_records()
+            else:
+                logging.warning(f"Part {part_idx+1} 无有效转写结果")
+        
+        # 检查是否全部完成
+        file_record = self.processed_audio.get(audio_path, {})
+        if file_record.get("completed", False):
+            # 创建索引文件
+            index_file = part_manager.create_index_file(audio_path, self.processed_audio)
+            logging.info(f"所有Part处理完成，创建索引文件: {index_file}")
+            
+        # 保存最终状态
+        self._save_processed_records()
+        return True
     def _process_audio_file(self, audio_path: str) -> bool:
         """处理音频文件"""
         filename = os.path.basename(audio_path)
         logging.info(f"处理音频文件: {filename}")
+        
+            # 获取音频时长
+        audio_duration = get_audio_duration(audio_path)
+        if audio_duration <= 0:
+            logging.error(f"无法获取音频时长: {filename}")
+            return False
+            
+        logging.info(f"音频时长: {audio_duration:.1f}秒")
+        
+        # 判断是否为大音频文件（超过20分钟）
+        if audio_duration > self.max_part_time * 60:
+            return self._process_large_audio_file(audio_path, audio_duration)
+        
         
         try:
             # 分割音频为片段
@@ -363,7 +491,7 @@ class FileProcessor:
             # self.processed_files[audio_path]["part_stats"] = part_stats
 
             self._save_processed_records()
-            
+
             os.remove(audio_path)
 
             return True

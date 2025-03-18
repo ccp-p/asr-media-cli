@@ -34,7 +34,8 @@ class ConfigManager:
         'retry_delay': 1.0,
         'temp_dir': None,
         'log_level': 'INFO',
-        'log_file': None
+        'log_file': None,
+        'max_part_time': 20
     }
 
     def __init__(self, config_file: Optional[str] = None):

@@ -95,6 +95,7 @@ class ProcessorController:
             extract_audio_only=config['extract_audio_only'],
             format_text=config['format_text'],
             include_timestamps=config['include_timestamps'],
+            max_part_time=config['max_part_time'],
             max_retries=config['max_retries']
         )
         
