@@ -107,7 +107,9 @@ def main():
             process_video=True,
             extract_audio_only=False,
             watch_mode=True,
+            max_part_time=2
         )
+        
         
         # 开始处理
         controller.start_processing()

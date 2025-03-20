@@ -118,7 +118,8 @@ class ProgressManager:
         """
         self.show_progress = show_progress
         self.progress_bars: Dict[str, ProgressBar] = {}
-        
+        self.progress_bar_prefixes: Dict[str, str] = {}  # 保存每个进度条的前缀
+
     def create_progress_bar(self, 
                           name: str, 
                           total: int, 
@@ -138,6 +139,7 @@ class ProgressManager:
         Returns:
             创建的进度条对象
         """
+        self.progress_bar_prefixes[name] = prefix
         description = f"{prefix}"
         if suffix:
             description = f"{prefix} - {suffix}"
@@ -255,4 +257,22 @@ class ProgressManager:
             进度条对象
         """
         return self.progress_bars.get(name)
-    
+    def reset_progress_bar(self, name: str, total: int):
+        """
+        重置进度条总数
+        
+        Args:
+            name: 进度条名称
+            total: 新的总数
+        """
+        if not self.show_progress:
+            return
+            
+        if name not in self.progress_bars:
+            return
+            
+        # 重置进度条
+        self.progress_bars[name].reset(total)
+        # 更新描述，显示新的总数
+        desc = self.progress_bar_prefixes.get(name, "处理中")
+        self.progress_bars[name].set_description(f"{desc}")

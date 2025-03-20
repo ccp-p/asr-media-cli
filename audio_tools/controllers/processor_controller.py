@@ -132,7 +132,7 @@ class ProcessorController:
         # 打印统计信息
         self._print_final_stats()
     
-    def _progress_callback(self,  current: int, total: int, message: Optional[str] = None,context: Optional[str] = None):
+    def _progress_callback(self, current: int, total: int, message: Optional[str] = None, context: Optional[str] = None):
         """
         进度回调处理 - 接受但忽略state参数
         
@@ -152,6 +152,7 @@ class ProcessorController:
         # 使用固定的进度条名称
         progress_name = f"{context}_progress" if context else "main_progress"
         progress_bar = self.progress_manager.get_progress_bar(progress_name)
+        
         # 创建或更新对应的进度条
         if not self.progress_manager.has_progress_bar(progress_name):
             prefix = f"{context or '处理'}"
@@ -160,10 +161,10 @@ class ProcessorController:
                 total,
                 prefix,
             )
-        # 对比bar的值 如果total值 以total的值为准，更新
-        if  progress_bar  and progress_bar.total != total:
-            progress_bar.reset(total)
-           
+        # 对比bar的值，如果total值变化，以新的total值为准，更新进度条
+        elif progress_bar and progress_bar.total != total:
+            # 使用新的total重置进度条
+            self.progress_manager.reset_progress_bar(progress_name, total)
             
         # 更新进度
         self.progress_manager.update_progress(
@@ -175,7 +176,6 @@ class ProcessorController:
         # 如果进度完成，关闭进度条
         if current >= total:
             self.progress_manager.finish_progress(progress_name, message or "完成")
-    
     def _update_stats(self, file_stats: Dict[str, Any]):
         """更新统计信息"""
         self.stats['processed_files'] += 1

@@ -317,7 +317,7 @@ class FileProcessor:
         logging.info(f"检测到大音频文件: {filename}，长度: {audio_duration/60:.1f}分钟，开始分part处理")
         
         # 创建Part管理器
-        part_manager = PartManager(self.output_folder)
+        part_manager = PartManager(self.output_folder, self.max_part_time)
         
         # 获取part信息和待处理part
         file_record, pending_parts = part_manager.get_parts_for_audio(
