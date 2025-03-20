@@ -98,6 +98,15 @@ class ProcessorController:
             max_part_time=config['max_part_time'],
             max_retries=config['max_retries']
         )
+            # 初始化任务管理器
+        from ..processing.task_manager import TaskManager
+        self.task_manager = TaskManager()
+        # 注册文件处理器和转写处理器到任务管理器
+        if hasattr(self, 'file_processor'):
+            self.task_manager.register_task("file_processor", self.file_processor)
+        
+        if hasattr(self, 'transcription_processor'):
+            self.task_manager.register_task("transcription_processor", self.transcription_processor)
         
         # 初始化统计信息
         self.stats = {
@@ -120,18 +129,111 @@ class ProcessorController:
     
     def _setup_signal_handlers(self):
         """设置信号处理器"""
-        self.original_sigint_handler = signal.getsignal(signal.SIGINT)
+        import signal
+        
+        # 在Windows上，只有有限的信号可用
         signal.signal(signal.SIGINT, self._handle_interrupt)
+        signal.signal(signal.SIGTERM, self._handle_interrupt)
+        
+        # 设置一个全局中断标志
+        self.interrupt_received = False
     
     def _handle_interrupt(self, sig, frame):
         """处理中断信号"""
-        logging.warning("\n\n⚠️ 接收到中断信号，正在安全终止程序...\n稍等片刻，正在保存已处理的数据...\n")
-        self.transcription_processor.set_interrupt_flag(True)
-        # 关闭所有进度条
-        self.progress_manager.close_all_progress_bars("已中断")
+        # 避免重复处理中断信号
+        if self.interrupt_received:
+            logging.warning("强制终止程序...")
+            os._exit(1)
+            return
+        
+        logging.warning("\n接收到中断信号，正在停止所有任务...")
+        self.interrupt_received = True
+        
+        # 立即终止所有线程池和后台任务
+        self._terminate_all_workers()
+        
         # 打印统计信息
         self._print_final_stats()
+        
+        # 确保日志输出完毕
+        import time
+        time.sleep(0.5)
+        
+        # 通知 Python 解释器退出
+        import sys
+        sys.exit(0)
     
+    def _terminate_all_workers(self):
+        """终止所有工作线程和任务"""
+        # 1. 设置中断标志
+        logging.info("正在终止所有工作线程...")
+        
+        # 2. 关闭转写处理器的线程池
+        if hasattr(self, 'transcription_processor') and hasattr(self.transcription_processor, 'executor'):
+            logging.info("关闭转写处理器线程池...")
+            try:
+                self.transcription_processor.executor.shutdown(wait=False, cancel_futures=True)
+            except Exception as e:
+                logging.error(f"关闭转写处理器线程池时出错: {str(e)}")
+        
+        # 3. 关闭文件处理器的线程池
+        if hasattr(self, 'file_processor') and hasattr(self.file_processor, 'executor'):
+            logging.info("关闭文件处理器线程池...")
+            try:
+                self.file_processor.executor.shutdown(wait=False, cancel_futures=True)
+            except Exception as e:
+                logging.error(f"关闭文件处理器线程池时出错: {str(e)}")
+        
+        # 4. 关闭所有观察器
+        if hasattr(self, 'observer') and self.observer:
+            logging.info("关闭文件监控...")
+            try:
+                self.observer.stop()
+                self.observer.join(timeout=1.0)
+            except Exception as e:
+                logging.error(f"关闭观察器时出错: {str(e)}")
+        
+        # 5. 显式标记所有处理器为中断状态
+        logging.info("设置所有处理器的中断标志...")
+        if hasattr(self, 'file_processor'):
+            self.file_processor.set_interrupt_flag(True)
+        
+        if hasattr(self, 'transcription_processor'):
+            self.transcription_processor.set_interrupt_flag(True)
+        
+        # 6. 关闭所有进度条
+        self.progress_manager.close_all_progress_bars("已中断")
+        
+        # 7. 终止所有子进程
+        self._kill_all_subprocesses()
+    
+    def _kill_all_subprocesses(self):
+        """终止所有子进程"""
+        import psutil
+        import os
+        
+        try:
+            current_process = psutil.Process(os.getpid())
+            children = current_process.children(recursive=True)
+            
+            for child in children:
+                logging.info(f"终止子进程: {child.pid}")
+                try:
+                    child.terminate()
+                except:
+                    pass
+            
+            # 等待所有进程终止
+            gone, still_alive = psutil.wait_procs(children, timeout=3)
+            
+            # 强制终止仍然存活的进程
+            for p in still_alive:
+                try:
+                    p.kill()
+                except:
+                    pass
+        except Exception as e:
+            logging.error(f"终止子进程时出错: {str(e)}")
     def _progress_callback(self, current: int, total: int, message: Optional[str] = None, context: Optional[str] = None):
         """
         进度回调处理 - 接受但忽略state参数
@@ -258,15 +360,20 @@ class ProcessorController:
             self.stats['start_time'] = time.time()
             
             if self.config['watch_mode']:
-                 # 处理已有文件
+                # 处理已有文件
                 self._process_existing_files()
                 
-                self._start_watch_mode()
+                # 如果已收到中断，不启动监听模式
+                if not self.interrupt_received:
+                    self._start_watch_mode()
             else:
                 self._process_existing_files()
                 
         except KeyboardInterrupt:
             logging.warning("\n程序已被用户中断")
+            # 确保设置中断标志
+            self.interrupt_received = True
+            self._handle_interrupt(None, None)
         except Exception as e:
             logging.error(f"\n程序执行出错: {str(e)}")
             import traceback
@@ -275,7 +382,7 @@ class ProcessorController:
             self._cleanup()
             # 打印最终统计信息
             self._print_final_stats()
-    
+   
     def _start_watch_mode(self):
         """启动监听模式"""
         logging.info(f"启动监听模式，监控目录: {self.config['media_folder']}")
@@ -411,5 +518,27 @@ class ProcessorController:
         except Exception as e:
             logging.warning(f"清理临时目录时出错: {str(e)}")
         
+        # 删除这一行：
+        # signal.signal(signal.SIGINT, self.original_sigint_handler)
+        """清理资源"""
+        logging.info("清理临时文件和资源...")
+        
+        # 关闭所有进度条
+        self.progress_manager.close_all_progress_bars("清理中")
+        
+        # 关闭ASR管理器资源
+        if hasattr(self.asr_manager, 'close'):
+            try:
+                self.asr_manager.close()
+            except Exception as e:
+                logging.warning(f"关闭ASR管理器时出错: {str(e)}")
+        
+        # 清理临时目录
+        try:
+            import shutil
+            if os.path.exists(self.temp_dir):
+                shutil.rmtree(self.temp_dir, ignore_errors=True)
+        except Exception as e:
+            logging.warning(f"清理临时目录时出错: {str(e)}")
+        
         # 恢复原始信号处理器
-        signal.signal(signal.SIGINT, self.original_sigint_handler)

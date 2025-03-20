@@ -116,6 +116,10 @@ def main():
         
     except KeyboardInterrupt:
         logging.warning("\n程序已被用户中断")
+        if controller:
+        # 确保中断被正确处理
+         controller._handle_interrupt(None, None)
+
     except Exception as e:
         logging.error(f"\n程序执行出错: {str(e)}")
         import traceback

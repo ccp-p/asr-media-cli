@@ -221,12 +221,21 @@ class FileProcessor:
             include_timestamps=include_timestamps,
             progress_callback=progress_callback
         )
+        
     def set_interrupt_flag(self, value=True):
         """设置中断标志"""
         self.interrupt_received = value
-        # 传递给转写处理器
-        if hasattr(self.transcription_processor, 'set_interrupt_flag'):
+        
+        # 确保中断传递到转写处理器
+        if hasattr(self, 'transcription_processor'):
             self.transcription_processor.set_interrupt_flag(value)
+            
+        # 停止当前所有处理
+        if value and hasattr(self, 'worker_threads'):
+            for thread in self.worker_threads:
+                # 这只是一个标记，实际上需要线程自己检查标记并退出
+                thread.interrupt = True
+        
     def is_recognized_file(self, filepath: str) -> bool:
         """检查文件是否已处理过，基于文件名而非完整路径"""
         # 获取不含路径和扩展名的基本文件名
