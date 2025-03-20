@@ -261,10 +261,7 @@ class FileProcessor:
         
         try:
             # 处理视频文件 - 需要先提取音频
-            if self.is_recognized_file(filepath):
-                logging.info(f"文件已处理过: {filename}跳过")
-                return True
-            elif file_extension in self.video_extensions:
+            if file_extension in self.video_extensions:
                 return self._process_video_file(filepath)
             # 处理音频文件
             elif file_extension == '.mp3':
