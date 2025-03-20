@@ -227,21 +227,23 @@ class FileProcessor:
         # 传递给转写处理器
         if hasattr(self.transcription_processor, 'set_interrupt_flag'):
             self.transcription_processor.set_interrupt_flag(value)
-    def _is_recognized_file(self, filepath: str) -> bool:
-        """检查文件是否已处理过"""
-        # 如果输出文件已存在且文件已经处理过
+    def is_recognized_file(self, filepath: str) -> bool:
+        """检查文件是否已处理过，基于文件名而非完整路径"""
+        # 获取不含路径和扩展名的基本文件名
         base_name = os.path.splitext(os.path.basename(filepath))[0]
         
+        # 检查是否存在对应的输出文件
+        output_path = os.path.join(self.output_folder, f"{base_name}.txt")
+        if os.path.exists(output_path):
+            return True
         
-        audio_path = os.path.join(self.output_folder, f"{base_name}.mp3")
+        # 检查处理记录中是否存在同名文件
+        for processed_path in self.processed_audio.keys():
+            processed_base_name = os.path.splitext(os.path.basename(processed_path))[0]
+            if base_name == processed_base_name:
+                return True
         
-        isSamePath = lambda x,y: os.path.normpath(x)  == os.path.normpath(y)
-        
-        isInFile = [ isSamePath(audio_path,key) for key in self.processed_audio.keys()]
-        
-        res = any([ any(isInFile)])
-        return res
-        
+        return False
         
     
     def process_file(self, filepath: str) -> bool:
@@ -259,7 +261,7 @@ class FileProcessor:
         
         try:
             # 处理视频文件 - 需要先提取音频
-            if self._is_recognized_file(filepath):
+            if self.is_recognized_file(filepath):
                 logging.info(f"文件已处理过: {filename}跳过")
                 return True
             elif file_extension in self.video_extensions:

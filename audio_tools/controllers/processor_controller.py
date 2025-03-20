@@ -307,7 +307,24 @@ class ProcessorController:
         if not media_files:
             logging.info("没有找到需要处理的媒体文件")
             return
+        # 过滤已处理的文件
         
+        filtered_files = []
+        for filename in media_files:
+            base_name = os.path.splitext(filename)[0]
+            output_path = os.path.join(self.config['output_folder'], f"{base_name}.txt")
+            
+            if self.file_processor.is_recognized_file(output_path):
+                logging.info(f"跳过已处理的文件: {filename}")
+            else:
+                filtered_files.append(filename)
+        
+        if not filtered_files:
+            logging.info("所有文件已处理完毕，没有新文件需要处理")
+            return
+        
+        logging.info(f"找到 {len(filtered_files)}/{len(media_files)} 个新文件需要处理")
+    
         self.stats['total_files'] = len(media_files)
         
         # 创建总体进度条
