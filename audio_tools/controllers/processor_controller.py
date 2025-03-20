@@ -347,6 +347,9 @@ class ProcessorController:
             # 更新统计信息
             self._update_stats({'success': success})
             
+              # 打印当前ASR服务使用统计
+            self._print_asr_stats()
+            
             # 更新总体进度
             self.progress_manager.update_progress(
                 "total_progress",
@@ -360,6 +363,15 @@ class ProcessorController:
             f"完成处理 {len(media_files)} 个文件"
         )
     
+    def _print_asr_stats(self):
+        """打印ASR服务使用统计信息"""
+        stats = self.asr_manager.get_service_stats()
+        logging.info("\nASR服务使用统计:")
+        for name, stat in stats.items():
+            logging.info(f"  - {name}: 成功 {stat.get('success', 0)} 次, "
+                        f"失败 {stat.get('failed', 0)} 次, "
+                        f"总用时 {format_time_duration(stat.get('time_used', 0))}")
+
     def _cleanup(self):
         """清理资源"""
         logging.info("清理临时文件和资源...")
