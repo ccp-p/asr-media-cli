@@ -256,6 +256,7 @@ class FileProcessor:
         Returns:
             处理是否成功
         """
+        filepath = self._normalize_filename(filepath)
         filename = os.path.basename(filepath)
         file_extension = os.path.splitext(filename)[1].lower()
         
@@ -329,7 +330,6 @@ class FileProcessor:
             index_file = part_manager.create_index_file(audio_path, self.processed_audio)
             self._save_processed_records()
             
-            self._cleanup_audio_file(audio_path)
             return True
         
         # 分割音频为片段
@@ -520,7 +520,11 @@ class FileProcessor:
                 self.processed_audio[audio_path] = {}
             self.processed_audio[audio_path]["last_processed_time"] = time.strftime("%Y-%m-%d %H:%M:%S")
             # self.processed_files[audio_path]["part_stats"] = part_stats
+            dest_audio_path = os.path.join(self.output_folder, os.path.basename(audio_path))
+            
             self._cleanup_audio_file(audio_path)
+            self._cleanup_audio_file(dest_audio_path)
+            
             
             self._save_processed_records()
             # 删除音频文件
@@ -537,8 +541,12 @@ class FileProcessor:
     def _save_processed_records(self):
         """保存已处理的文件记录"""
         save_json_file(self.processed_record_file, self.processed_audio)
+    def init_media_files(self):
+        """初始化媒体文件夹"""
+        
 
-    def start_file_monitoring(self) -> 'Observer':
+        pass
+    def start_file_monitoring(self,additional_folders=None) -> 'Observer':
         """
         启动文件监控
         
@@ -547,7 +555,49 @@ class FileProcessor:
         """
         event_handler = AudioFileHandler(self)
         observer = Observer()
+      # 监控主媒体文件夹
         observer.schedule(event_handler, self.media_folder, recursive=False)
-        observer.start()
         logging.info(f"开始监控目录: {self.media_folder}")
+        additional_folders = additional_folders or self.output_folder
+        # 监控额外的文件夹
+        if additional_folders:
+            if isinstance(additional_folders, str):
+                additional_folders = [additional_folders]
+                
+            for folder in additional_folders:
+                if os.path.isdir(folder):
+                    observer.schedule(event_handler, folder, recursive=False)
+                    logging.info(f"开始监控额外目录: {folder}")
+                else:
+                    logging.warning(f"额外目录不存在，跳过监控: {folder}")
+        
+        observer.start()
         return observer
+
+    def _normalize_filename(self, filepath: str) -> str:
+        """
+        规范化文件名，移除可能导致路径问题的特殊字符
+        
+        Args:
+            filepath: 原始文件路径
+            
+        Returns:
+            规范化后的文件路径
+        """
+        dir_name = os.path.dirname(filepath)
+        filename = os.path.basename(filepath)
+        
+        # 清理文件名：去除首尾空格
+        cleaned_filename = filename.strip()
+        
+        # 如果文件名已更改，则重命名文件
+        if cleaned_filename != filename:
+            new_path = os.path.join(dir_name, cleaned_filename)
+            try:
+                os.rename(filepath, new_path)
+                logging.info(f"规范化文件名: {filename} -> {cleaned_filename}")
+                return new_path
+            except Exception as e:
+                logging.warning(f"规范化文件名失败: {str(e)}")
+                return filepath
+        return filepath

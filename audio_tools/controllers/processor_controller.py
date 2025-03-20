@@ -279,14 +279,31 @@ class ProcessorController:
     def _start_watch_mode(self):
         """启动监听模式"""
         logging.info(f"启动监听模式，监控目录: {self.config['media_folder']}")
-        observer = self.file_processor.start_file_monitoring()
+        
+        # 启动对主媒体文件夹的监控
+        main_observer = self.file_processor.start_file_monitoring()
+        
+        # 导入特殊文件夹监控模块
+        from ..processing.folder_monitor import start_dest_folder_monitoring
+        
+        # 设置下载目录和目标目录
+        download_dest = self.config['output_folder']  
+        download_target = self.config['media_folder']
+        
+        # 启动对下载目录的监控
+        dest_observer = start_dest_folder_monitoring(download_dest, download_target)
+        logging.info(f"启动特殊监控: {download_dest} -> {download_target}")
         
         try:
             while True:
                 time.sleep(1)
         except KeyboardInterrupt:
-            observer.stop()
-            observer.join()
+            # 停止所有观察者
+            main_observer.stop()
+            dest_observer.stop()
+            
+            main_observer.join()
+            dest_observer.join()
             logging.info("\n监听模式已停止")
     
     def _process_existing_files(self):
