@@ -328,6 +328,8 @@ class FileProcessor:
             logging.info(f"音频 {filename} 所有part已处理完成")
             index_file = part_manager.create_index_file(audio_path, self.processed_audio)
             self._save_processed_records()
+            
+            self._cleanup_audio_file(audio_path)
             return True
         
         # 分割音频为片段
@@ -362,7 +364,21 @@ class FileProcessor:
             
             # 处理这个part的所有片段
             segment_results = self.transcription_processor.process_audio_segments(part_segments)
-            
+            # 记录 ASR 统计信息
+            successful_segments = sum(1 for r in segment_results.values() if r is not None)
+            part_key = str(part_idx)
+            total_segments = len(part_segments)
+            if part_key not in file_record["parts"]:
+                file_record["parts"][part_key] = {}
+            file_record["parts"][part_key]["segment_stats"] = {
+                "successful": successful_segments,
+                "total": total_segments
+            }
+
+            # 记录 ASR 模型信息
+            if hasattr(self.transcription_processor, 'model_name'):
+                file_record["asr_model"] = self.transcription_processor.model_name
+
             # 重试失败的片段
             if segment_results:
                 segment_results = self.transcription_processor.retry_failed_segments(
@@ -406,6 +422,21 @@ class FileProcessor:
         # 保存最终状态
         self._save_processed_records()
         return True
+    
+    def _cleanup_audio_file(self, audio_path: str):
+        """
+        清理处理完成后的音频文件
+        
+        Args:
+            audio_path: 音频文件路径
+        """
+        try:
+            if os.path.exists(audio_path):
+                os.remove(audio_path)
+                logging.info(f"删除音频文件: {audio_path}")
+        except Exception as e:
+            logging.warning(f"删除音频文件失败: {audio_path}, 错误: {str(e)}")
+
     def _process_audio_file(self, audio_path: str) -> bool:
         """处理音频文件"""
         filename = os.path.basename(audio_path)
@@ -489,10 +520,11 @@ class FileProcessor:
                 self.processed_audio[audio_path] = {}
             self.processed_audio[audio_path]["last_processed_time"] = time.strftime("%Y-%m-%d %H:%M:%S")
             # self.processed_files[audio_path]["part_stats"] = part_stats
-
+            self._cleanup_audio_file(audio_path)
+            
             self._save_processed_records()
             # 删除音频文件
-            os.remove(audio_path)
+            
             logging.info(f"删除音频文件: {audio_path}")
             return True
             

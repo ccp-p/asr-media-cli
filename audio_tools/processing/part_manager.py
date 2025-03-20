@@ -170,8 +170,80 @@ class PartManager:
         processed_files[audio_path] = file_record
         
         return output_path
-    
+    def _extract_asr_info(self, file_record: Dict) -> Dict:
+        """
+        从文件记录中提取 ASR 相关信息
+        
+        Args:
+            file_record: 文件处理记录
+            
+        Returns:
+            ASR 信息字典
+        """
+        asr_info = {}
+        
+        # 提取 ASR 模型信息
+        if "asr_model" in file_record:
+            asr_info["模型"] = file_record.get("asr_model", "未知")
+        
+        # 提取识别统计信息
+        successful_segments = 0
+        total_segments = 0
+        
+        for part_key, part_data in file_record.get("parts", {}).items():
+            if "segment_stats" in part_data:
+                successful_segments += part_data["segment_stats"].get("successful", 0)
+                total_segments += part_data["segment_stats"].get("total", 0)
+        
+        if total_segments > 0:
+            asr_info["识别成功率"] = f"{successful_segments}/{total_segments} 片段 ({successful_segments/total_segments:.1%})"
+        
+        return asr_info
     def create_index_file(self, audio_path: str, processed_files: Dict) -> Optional[str]:
+        """
+        创建汇总索引文件
+        
+        Args:
+            audio_path: 音频文件路径
+            processed_files: 已处理文件记录
+            
+        Returns:
+            索引文件路径，如果未全部完成则返回None
+        """
+        file_record = processed_files.get(audio_path, {})
+        
+        # 如果未全部完成，不创建索引
+        if not file_record.get("completed", False):
+            return None
+            
+        output_dir = self.create_part_output_folder(audio_path)
+        index_path = os.path.join(output_dir, "index.txt")
+        
+        with open(index_path, 'w', encoding='utf-8') as f:
+            # 写入基本信息
+            f.write(f"# {file_record.get('filename', '未知文件')}\n\n")
+            f.write(f"- 总时长: {file_record.get('total_duration', 0)/60:.1f}分钟\n")
+            f.write(f"- 共分{file_record.get('total_parts', 0)}个部分\n")
+            f.write(f"- 完成时间: {file_record.get('last_processed_time', '')}\n")
+            
+            # 获取并写入 ASR 信息
+            asr_info = self._extract_asr_info(file_record)
+            if asr_info:
+                f.write("\n## ASR 识别信息\n\n")
+                for key, value in asr_info.items():
+                    f.write(f"- {key}: {value}\n")
+            
+            # 写入各部分链接
+            f.write("\n## 目录\n\n")
+            for i in range(file_record.get("total_parts", 0)):
+                part_key = str(i)
+                if part_key in file_record["parts"] and file_record["parts"][part_key].get("completed", False):
+                    part_file = os.path.basename(file_record["parts"][part_key]["output_file"])
+                    part_name = f"Part {i+1}"
+                    f.write(f"- [{part_name}](./{part_file}) - " 
+                           f"{self.minutes_per_part}分钟\n")
+        
+        return index_path
         """
         创建汇总索引文件
         
