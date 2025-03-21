@@ -433,10 +433,20 @@ class AudioProcessor:
                 
                 # 准备当前部分的文本，传入start_segment确保时间戳连续
                 part_text = self.prepare_result_text(current_part_files, current_part_results, start_segment)
-                
+                # 当处理部分时计算时间戳
+                total_duration = self.get_audio_duration(input_path)
+                start_time = start_segment * 30  # 假设每个片段30秒
+                end_time = min(end_segment * 30, total_duration)  # 使用实际音频总时长来限制
+
                 # 保存当前部分的结果
-                part_output_file = self.save_part_result(part_text, filename, part_num)
-                
+                part_output_file = self.save_part_result(
+                                        part_text, 
+                                        filename, 
+                                        part_num,
+                                        total_parts=total_parts,
+                                        start_time=start_time,
+                                        end_time=end_time
+                                    )
                 # 记录当前部分的统计信息
                 part_stats.append({
                     "part": part_num,
@@ -499,7 +509,7 @@ class AudioProcessor:
             self.finish_progress("file_progress", f"处理失败: {str(e)}")
             return False
     
-    def save_part_result(self, text: str, original_filename: str, part_num: int) -> str:
+def save_part_result(self, text: str, original_filename: str, part_num: int, total_parts: int = None, start_time: float = None, end_time: float = None) -> str:
         """
         保存部分转写结果到文本文件
         
@@ -507,7 +517,10 @@ class AudioProcessor:
             text: 要保存的文本内容
             original_filename: 原始音频文件名
             part_num: 部分编号
-            
+            total_parts: 总部分数
+            start_time: 该部分的开始时间(秒)
+            end_time: 该部分的结束时间(秒)
+                
         Returns:
             保存的输出文件路径
         """
@@ -516,8 +529,17 @@ class AudioProcessor:
         
         with open(output_file, 'w', encoding='utf-8') as f:
             # 添加文件头，包含部分信息
-            f.write(f"# {base_name} - 第 {part_num} 部分\n")
-            f.write(f"# 处理时间: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            f.write(f"### {base_name} - Part {part_num}")
+            if total_parts:
+                f.write(f"/{total_parts}")
+            
+            # 添加时间戳信息（如果提供）
+            if start_time is not None and end_time is not None:
+                start_formatted = time.strftime("%H:%M:%S", time.gmtime(start_time))
+                end_formatted = time.strftime("%H:%M:%S", time.gmtime(end_time))
+                f.write(f" - {start_formatted} 到 {end_formatted}")
+            
+            f.write("\n\n")
             f.write(text)
         
         return output_file
