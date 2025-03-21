@@ -509,7 +509,7 @@ class AudioProcessor:
             self.finish_progress("file_progress", f"处理失败: {str(e)}")
             return False
     
-def save_part_result(self, text: str, original_filename: str, part_num: int, total_parts: int = None, start_time: float = None, end_time: float = None) -> str:
+    def save_part_result(self, text: str, original_filename: str, part_num: int, total_parts: int = None, start_time: float = None, end_time: float = None) -> str:
         """
         保存部分转写结果到文本文件
         
@@ -528,7 +528,7 @@ def save_part_result(self, text: str, original_filename: str, part_num: int, tot
         output_file = os.path.join(self.output_folder, f"{base_name}_part{part_num}.txt")
         
         with open(output_file, 'w', encoding='utf-8') as f:
-            # 添加文件头，包含部分信息
+            # 添加文件头，包含部分信息和详细时间戳
             f.write(f"### {base_name} - Part {part_num}")
             if total_parts:
                 f.write(f"/{total_parts}")
@@ -538,6 +538,43 @@ def save_part_result(self, text: str, original_filename: str, part_num: int, tot
                 start_formatted = time.strftime("%H:%M:%S", time.gmtime(start_time))
                 end_formatted = time.strftime("%H:%M:%S", time.gmtime(end_time))
                 f.write(f" - {start_formatted} 到 {end_formatted}")
+                
+                # 添加更详细的时间连接信息
+                if part_num > 1:
+                    # 前一部分的结束时间点
+                    prev_end_formatted = time.strftime("%H:%M:%S", time.gmtime(start_time))
+                    f.write(f"\n\n> 接上一部分 {part_num-1} 的时间点: {prev_end_formatted}")
+                
+                if part_num < total_parts:
+                    # 下一部分的开始时间点
+                    next_start_formatted = time.strftime("%H:%M:%S", time.gmtime(end_time))
+                    f.write(f"\n\n> 与下一部分 {part_num+1} 的连接时间点: {next_start_formatted}")
+            
+            # 添加详细的时间段说明
+            f.write("\n\n<!-- 本部分包含的时间段: -->")
+            segment_length = 30  # 默认每个片段30秒
+            segments_count = int((end_time - start_time) / segment_length)
+            
+            # 显示部分中的几个关键时间段
+            if segments_count > 0:
+                # 显示第一个时间段
+                first_start = time.strftime("%H:%M:%S", time.gmtime(start_time))
+                first_end = time.strftime("%H:%M:%S", time.gmtime(start_time + segment_length))
+                f.write(f"\n\n<!-- 开始: [{first_start}-{first_end}] -->")
+                
+                # 如果段数很多，显示中间的一个时间段
+                if segments_count > 2:
+                    mid_point = start_time + (segments_count // 2) * segment_length
+                    mid_start = time.strftime("%H:%M:%S", time.gmtime(mid_point))
+                    mid_end = time.strftime("%H:%M:%S", time.gmtime(mid_point + segment_length))
+                    f.write(f"\n\n<!-- 中间: [{mid_start}-{mid_end}] -->")
+                
+                # 显示最后一个时间段
+                last_start_time = end_time - segment_length
+                if last_start_time > start_time:  # 确保至少有两个段
+                    last_start = time.strftime("%H:%M:%S", time.gmtime(last_start_time))
+                    last_end = time.strftime("%H:%M:%S", time.gmtime(end_time))
+                    f.write(f"\n\n<!-- 结束: [{last_start}-{last_end}] -->")
             
             f.write("\n\n")
             f.write(text)
