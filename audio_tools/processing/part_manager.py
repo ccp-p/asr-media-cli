@@ -117,7 +117,13 @@ class PartManager:
         Returns:
             输出文件夹路径
         """
+        # 不再对文件名进行处理，保留完整的文件名
         base_name = os.path.splitext(os.path.basename(audio_path))[0]
+        
+        # 如果是重建的虚拟路径，则使用最后一部分作为目录名
+        if audio_path.startswith("__reconstructed__/"):
+            base_name = os.path.basename(audio_path.replace("__reconstructed__/", ""))
+        
         output_dir = os.path.join(self.output_folder, base_name)
         os.makedirs(output_dir, exist_ok=True)
         return output_dir
