@@ -201,7 +201,7 @@ class PartManager:
         return asr_info
     def create_index_file(self, audio_path: str, processed_files: Dict) -> Optional[str]:
         """
-        创建汇总索引文件
+        创建汇总索引文件，内容包含所有part的文本
         
         Args:
             audio_path: 音频文件路径
@@ -210,6 +210,8 @@ class PartManager:
         Returns:
             索引文件路径，如果未全部完成则返回None
         """
+        import os
+        
         file_record = processed_files.get(audio_path, {})
         
         # 如果未全部完成，不创建索引
@@ -233,51 +235,56 @@ class PartManager:
                 for key, value in asr_info.items():
                     f.write(f"- {key}: {value}\n")
             
-            # 写入各部分链接
+            # 写入目录
             f.write("\n## 目录\n\n")
             for i in range(file_record.get("total_parts", 0)):
                 part_key = str(i)
                 if part_key in file_record["parts"] and file_record["parts"][part_key].get("completed", False):
                     part_file = os.path.basename(file_record["parts"][part_key]["output_file"])
                     part_name = f"Part {i+1}"
-                    f.write(f"- [{part_name}](./{part_file}) - " 
-                           f"{self.minutes_per_part}分钟\n")
-        
-        return index_path
-        """
-        创建汇总索引文件
-        
-        Args:
-            audio_path: 音频文件路径
-            processed_files: 已处理文件记录
+                    # 计算每个部分的起始和结束时间
+                    start_time, end_time = self.get_part_time_range(i)
+                    f.write(f"- [{part_name}](./{part_file}) - "
+                           f"{start_time/60:.1f}-{end_time/60:.1f}分钟\n")
             
-        Returns:
-            索引文件路径，如果未全部完成则返回None
-        """
-        file_record = processed_files.get(audio_path, {})
-        
-        # 如果未全部完成，不创建索引
-        if not file_record.get("completed", False):
-            return None
+            # 写入完整内容（所有part的总和）
+            f.write("\n## 完整内容\n\n")
             
-        output_dir = self.create_part_output_folder(audio_path)
-        index_path = os.path.join(output_dir, "index.txt")
-        
-        with open(index_path, 'w', encoding='utf-8') as f:
-            # 写入基本信息
-            f.write(f"# {file_record.get('filename', '未知文件')}\n\n")
-            f.write(f"- 总时长: {file_record.get('total_duration', 0)/60:.1f}分钟\n")
-            f.write(f"- 共分{file_record.get('total_parts', 0)}个部分\n")
-            f.write(f"- 完成时间: {file_record.get('last_processed_time', '')}\n\n")
-            
-            # 写入各部分链接
-            f.write("## 目录\n\n")
+            # 按照part顺序读取并合并所有part内容
             for i in range(file_record.get("total_parts", 0)):
                 part_key = str(i)
                 if part_key in file_record["parts"] and file_record["parts"][part_key].get("completed", False):
-                    part_file = os.path.basename(file_record["parts"][part_key]["output_file"])
-                    part_name = f"Part {i+1}"
-                    f.write(f"- [{part_name}](./{part_file}) - " 
-                           f"{self.minutes_per_part}分钟\n")
+                    part_file_path = file_record["parts"][part_key]["output_file"]
+                    
+                    # 添加part分隔标记
+                    start_time, end_time = self.get_part_time_range(i)
+                    f.write(f"\n### Part {i+1} ({start_time/60:.1f}-{end_time/60:.1f}分钟)\n\n")
+                    
+                    # 读取part文件内容并写入索引文件
+                    try:
+                        with open(part_file_path, 'r', encoding='utf-8') as part_file:
+                            # 跳过part文件中的元数据部分（通常是文件开头的几行）
+                            part_content = part_file.read()
+                            
+                            # 如果part文件有标题或元数据，可以尝试跳过
+                            # 这里假设正文内容从第一个空行后开始
+                            if "---" in part_content[:200]:
+                                # 如果文件使用Markdown格式的元数据块
+                                part_content = part_content.split("---", 2)[-1].strip()
+                            elif "原始文件:" in part_content[:200]:
+                                # 如果文件包含元数据但没有明确分隔符，尝试找到第一个空行
+                                lines = part_content.split("\n")
+                                metadata_end = 0
+                                for idx, line in enumerate(lines[:10]):
+                                    if not line.strip():
+                                        metadata_end = idx + 1
+                                        break
+                                if metadata_end > 0:
+                                    part_content = "\n".join(lines[metadata_end:]).strip()
+                            
+                            f.write(part_content)
+                            f.write("\n\n")  # 在各部分之间添加空行
+                    except Exception as e:
+                        f.write(f"[无法读取Part {i+1}内容: {str(e)}]\n\n")
         
         return index_path
