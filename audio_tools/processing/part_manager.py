@@ -1,9 +1,10 @@
 import os
 import logging
+import re
 import time
 from typing import Dict, List, Tuple, Optional, Any
 
-class PartManager:
+class PartManager:  
     """管理大音频文件的分part处理和断点续传"""
     
     def __init__(self, output_folder: str, minutes_per_part: int = 20):
@@ -288,3 +289,215 @@ class PartManager:
                         f.write(f"[无法读取Part {i+1}内容: {str(e)}]\n\n")
         
         return index_path
+
+    def rebuild_index_files(self, output_folder: Optional[str] = None, processed_files: Optional[Dict] = None) -> Dict:
+        """
+        扫描输出目录，重新生成所有处理过的音频的索引文件，确保包含完整内容
+        支持多种 part 文件命名格式
+        
+        Args:
+            output_folder: 输出目录，如果为None则使用self.output_folder
+            processed_files: 已处理文件记录，如果为None则重新扫描并构建
+            
+        Returns:
+            处理结果统计: {"total": 总数, "updated": 更新数, "failed": 失败数, "skipped": 跳过数}
+        """
+        import os
+        import glob
+        import logging
+        import json
+        import re
+        
+        # 确定输出文件夹
+        output_folder = output_folder or self.output_folder
+        if not os.path.exists(output_folder):
+            logging.error(f"输出文件夹不存在: {output_folder}")
+            return {"total": 0, "updated": 0, "failed": 0, "skipped": 0}
+        
+        # 如果没有提供处理记录，尝试加载或重建
+        if processed_files is None:
+            processed_files = {}
+            # 尝试从记录文件加载
+            record_path = os.path.join(output_folder, "processed_records.json")
+            if os.path.exists(record_path):
+                try:
+                    with open(record_path, 'r', encoding='utf-8') as f:
+                        processed_files = json.load(f)
+                    logging.info(f"已加载处理记录: {len(processed_files)} 个文件")
+                except Exception as e:
+                    logging.warning(f"加载处理记录文件失败: {str(e)}")
+        
+        # 编译正则表达式以匹配part文件
+        part_pattern = re.compile(r'(?:^part_?\d+\.txt$|^.*_part_?\d+\.txt$)', re.IGNORECASE)
+        
+        # 统计数据
+        stats = {"total": 0, "updated": 0, "failed": 0, "skipped": 0}
+        
+        # 递归查找所有包含 part 文件的目录
+        def find_part_directories(root_dir):
+            result = []
+            for root, dirs, files in os.walk(root_dir):
+                # 检查当前目录是否包含 part 文件
+                has_part_files = any(part_pattern.match(f) for f in files)
+                if has_part_files:
+                    result.append(root)
+            return result
+        
+        # 自定义排序函数，按照part索引排序
+        def sort_part_files(filename):
+            basename = os.path.basename(filename)
+            # 尝试提取数字部分
+            match = re.search(r'part_?(\d+)\.txt$', basename, re.IGNORECASE)
+            if match:
+                return int(match.group(1))
+            # 尝试提取 _part 后的数字
+            match = re.search(r'_part_?(\d+)\.txt$', basename, re.IGNORECASE)
+            if match:
+                return int(match.group(1))
+            # 默认返回大数字，确保无法识别的文件排在后面
+            return 9999
+        
+        # 获取所有包含 part 文件的目录
+        audio_dirs = find_part_directories(output_folder)
+        
+        logging.info(f"开始扫描 {len(audio_dirs)} 个包含 part 文件的目录以重建索引文件")
+        
+        for audio_dir in audio_dirs:
+            stats["total"] += 1
+            audio_dir_name = os.path.basename(audio_dir)  # 获取目录名称
+            
+            # 检查是否存在part文件并获取它们
+            # 使用通配符匹配各种可能的 part 文件模式
+            potential_part_files = []
+            # 匹配 part_1.txt 格式
+            potential_part_files.extend(glob.glob(os.path.join(audio_dir, "part_*.txt")))
+            # 匹配 part1.txt 格式
+            potential_part_files.extend(glob.glob(os.path.join(audio_dir, "part*.txt")))
+            # 匹配 *_part1.txt 和 *_part_1.txt 格式
+            potential_part_files.extend(glob.glob(os.path.join(audio_dir, "*_part*.txt")))
+            
+            # 过滤重复文件并按自定义逻辑排序
+            part_files = sorted(set(potential_part_files), key=sort_part_files)
+            
+            if not part_files:
+                logging.warning(f"目录中没有找到part文件: {audio_dir}")
+                stats["skipped"] += 1
+                continue
+            
+            # 尝试构建或更新文件记录
+            try:
+                # 查找原始音频文件路径
+                audio_path = None
+                relative_dir = os.path.relpath(audio_dir, output_folder)
+                
+                if processed_files:
+                    # 从现有记录中查找
+                    for path, record in processed_files.items():
+                        parts_data = record.get("parts", {})
+                        if parts_data:
+                            first_part_file = next(iter(parts_data.values())).get("output_file", "")
+                            if first_part_file:
+                                part_dir = os.path.dirname(first_part_file)
+                                if os.path.normpath(part_dir) == os.path.normpath(audio_dir):
+                                    audio_path = path
+                                    break
+                
+                # 如果找不到原始路径，使用虚拟路径
+                if not audio_path:
+                    audio_path = f"__reconstructed__/{relative_dir}"
+                    processed_files[audio_path] = {}
+                
+                file_record = processed_files.get(audio_path, {})
+                
+                # 重建文件记录
+                if "parts" not in file_record:
+                    file_record["parts"] = {}
+                
+                # 获取part数量
+                total_parts = len(part_files)
+                file_record["total_parts"] = total_parts
+                file_record["filename"] = audio_dir_name
+                
+                # 估算总时长
+                total_duration = total_parts * self.seconds_per_part
+                file_record["total_duration"] = total_duration
+                
+                # 标记为已完成
+                file_record["completed"] = True
+                file_record["last_processed_time"] = file_record.get("last_processed_time") or "未知"
+                
+                # 跟踪已处理的part索引，确保不会有重复
+                processed_indices = set()
+                
+                # 更新每个part的信息
+                for i, part_file in enumerate(part_files):
+                    part_filename = os.path.basename(part_file)
+                    try:
+                        # 从文件名中提取part索引
+                        part_idx = None
+                        
+                        # 尝试使用正则表达式匹配不同的格式
+                        match = re.search(r'(?:^|_)part_?(\d+)\.txt$', part_filename, re.IGNORECASE)
+                        if match:
+                            part_idx = int(match.group(1)) - 1
+                        
+                        # 如果无法提取索引，使用文件的顺序作为索引
+                        if part_idx is None or part_idx in processed_indices:
+                            part_idx = i
+                        
+                        processed_indices.add(part_idx)
+                        part_key = str(part_idx)
+                        
+                        if part_key not in file_record["parts"]:
+                            file_record["parts"][part_key] = {}
+                        
+                        file_record["parts"][part_key].update({
+                            "completed": True,
+                            "output_file": part_file,
+                            "completed_time": file_record.get("last_processed_time") or "未知",
+                        })
+                    except Exception as e:
+                        logging.warning(f"解析part文件名失败: {part_file}, 错误: {str(e)}")
+                        continue
+                
+                # 更新处理记录
+                processed_files[audio_path] = file_record
+                
+                # 生成新的索引文件
+                index_path = self.create_index_file(audio_path, processed_files)
+                if index_path:
+                    logging.info(f"已更新索引文件: {index_path}")
+                    stats["updated"] += 1
+                else:
+                    logging.warning(f"索引文件创建失败: {audio_dir}")
+                    stats["failed"] += 1
+                    
+            except Exception as e:
+                logging.error(f"重建索引文件时出错: {audio_dir}, 错误: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                stats["failed"] += 1
+        
+        # 保存更新后的处理记录
+        record_path = os.path.join(output_folder, "processed_records.json")
+        try:
+            with open(record_path, 'w', encoding='utf-8') as f:
+                json.dump(processed_files, f, ensure_ascii=False, indent=2)
+            logging.info(f"已保存更新后的处理记录: {record_path}")
+        except Exception as e:
+            logging.error(f"保存处理记录失败: {str(e)}")
+        
+        # 打印统计信息
+        logging.info(f"索引文件重建完成: 总共 {stats['total']} 个目录, "
+                    f"更新 {stats['updated']} 个, 失败 {stats['failed']} 个, 跳过 {stats['skipped']} 个")
+        
+        return stats
+
+if __name__ == "__main__":
+    # 创建Part管理器
+    part_manager = PartManager(output_folder='D:/download/dest/',minutes_per_part=20)
+    
+
+    # 重建索引文件
+    part_manager.rebuild_index_files()
+    
