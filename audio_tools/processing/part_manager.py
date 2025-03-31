@@ -501,9 +501,9 @@ class PartManager:
 
 if __name__ == "__main__":
     # 创建Part管理器
-    part_manager = PartManager(output_folder='D:/download/dest/',minutes_per_part=20)
+    # part_manager = PartManager(output_folder='D:/download/dest/',minutes_per_part=20)
     
 
     # 重建索引文件
-    part_manager.rebuild_index_files()
-    
+    # part_manager.rebuild_index_files()
+    pass

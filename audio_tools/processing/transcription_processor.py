@@ -67,6 +67,7 @@ class TranscriptionProcessor:
         PROGRESS_UPDATE_INTERVAL = 1.0  # 进度更新间隔
         STALLED_CHECK_INTERVAL = 5.0  # 卡住检查间隔
         SINGLE_TASK_TIMEOUT = 300  # 单任务超时
+        LAST_TASK_GRACE_PERIOD = 60  # 最后一个任务特殊宽限期（秒）
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             future_to_segment = {}
@@ -143,7 +144,13 @@ class TranscriptionProcessor:
                     # 检查所有活动任务是否运行时间过长
                     for future in active_futures:
                         task_duration = current_time - task_start_times[future]
-                        if task_duration > SINGLE_TASK_TIMEOUT:
+                        
+                        # 如果只剩最后几个任务，使用更激进的超时策略
+                        timeout_threshold = SINGLE_TASK_TIMEOUT
+                        if len(active_futures) <= 3 and completed_count > total_segments * 0.8:
+                            timeout_threshold = min(SINGLE_TASK_TIMEOUT, LAST_TASK_GRACE_PERIOD)
+                            
+                        if task_duration > timeout_threshold:
                             stalled_tasks.append(future)
                             i, segment_file = future_to_segment[future]
                             logging.warning(f"任务执行时间过长 {task_duration:.1f}秒: {segment_file}")
@@ -164,21 +171,34 @@ class TranscriptionProcessor:
                         time_ratio = total_time / (OVERALL_TIMEOUT * 0.8)  # 使用80%超时时间作为基准
                         remaining_ratio = len(active_futures) / total_segments
                         
-                        if remaining_ratio < 0.05 and time_ratio > 0.8:  # 剩余不到5%的任务且已用时超过80%
+                        # 更激进的终止条件：如果剩余不到5%的任务且已用时超过80%，或者只剩1-2个任务且已执行超过2分钟
+                        if (remaining_ratio < 0.05 and time_ratio > 0.8) or \
+                           (len(active_futures) <= 2 and (current_time - overall_start_time) > 120):
                             logging.warning(f"只剩余 {len(active_futures)} 个任务但执行时间过长，强制完成...")
                             for future in list(active_futures):
                                 future.cancel()
                                 i, segment_file = future_to_segment[future]
                                 logging.warning(f"强制取消卡住的尾部任务: {segment_file}")
                                 completed_count += 1
+                                # 从追踪列表中移除
+                                del future_to_segment[future]
+                                del task_start_times[future]
                             active_futures = []
-                    
-                    # 避免CPU占用过高
-                    if not done_futures:
-                        time.sleep(0.1)
+                
+                # 避免CPU占用过高
+                if not done_futures and active_futures:
+                    time.sleep(0.1)
+            
+            # 确保进度条达到100%
+            if self.progress_callback and completed_count < total_segments:
+                self.progress_callback(
+                    total_segments,
+                    total_segments,
+                    f"完成 - {completed_count}/{total_segments} 片段处理完毕",
+                    "segment"
+                )
         
         return segment_results
-
     def retry_failed_segments(self, segment_files: List[str], 
                             segment_results: Dict[int, str]) -> Dict[int, str]:
         """

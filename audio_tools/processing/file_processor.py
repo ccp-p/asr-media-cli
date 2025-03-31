@@ -3,6 +3,7 @@
 负责文件的监控和处理流程
 """
 import os
+import subprocess
 import threading
 import time
 import logging
@@ -249,6 +250,8 @@ class FileProcessor:
         # 检查处理记录中是否存在同名文件
         for processed_path in self.processed_audio.keys():
             processed_base_name = os.path.splitext(os.path.basename(processed_path))[0]
+            # inculdes
+            
             if base_name == processed_base_name:
                 return True
         
@@ -268,7 +271,9 @@ class FileProcessor:
         filepath = self._normalize_filename(filepath)
         filename = os.path.basename(filepath)
         file_extension = os.path.splitext(filename)[1].lower()
-        
+        if(self.is_recognized_file(filepath)):
+            logging.info(f"文件 {filename} 已处理，跳过: {filepath}")
+            return True
         try:
             # 处理视频文件 - 需要先提取音频
             if file_extension in self.video_extensions:
@@ -552,9 +557,68 @@ class FileProcessor:
         save_json_file(self.processed_record_file, self.processed_audio)
     def init_media_files(self):
         """初始化媒体文件夹"""
-        
 
         pass
+    def nomallize_audio_format(self, input_path: str, output_format: str = "mp3") -> str:
+        """
+        将音频文件转换为指定格式
+        
+        Args:
+            input_path: 输入音频文件路径
+            output_format: 目标音频格式，默认为mp3
+            
+        Returns:
+            转换后的音频文件路径，失败则返回None
+        """
+        try:
+            input_filename = os.path.basename(input_path)
+            base_name = os.path.splitext(input_filename)[0]
+            output_dir = os.path.dirname(input_path)
+            output_path = os.path.join(output_dir, f"{base_name}.{output_format}")
+            
+            # 如果输出文件已存在，或者输入文件已经是目标格式，则直接返回
+            if output_path == input_path or os.path.exists(output_path):
+                logging.info(f"目标格式文件已存在: {output_path}")
+                return output_path
+                
+            # 使用FFmpeg转换音频格式
+            logging.info(f"正在将音频 {input_filename} 转换为 {output_format} 格式")
+            
+            # 根据不同格式设置FFmpeg参数
+            if output_format == "mp3":
+                quality_param = ['-q:a', '0']
+            elif output_format == "wav":
+                quality_param = ['-acodec', 'pcm_s16le']
+            elif output_format == "m4a":
+                quality_param = ['-c:a', 'aac', '-b:a', '192k']
+            else:
+                # 默认参数
+                quality_param = ['-q:a', '0']
+                
+            cmd = [
+                'ffmpeg', '-i', input_path,
+                *quality_param, output_path,
+                '-y'  # 覆盖已存在的文件
+            ]
+            
+            # 执行命令
+            subprocess.run(cmd, check=True, capture_output=True)
+            
+            if os.path.exists(output_path):
+                logging.info(f"格式转换成功: {output_path}")
+                os.remove(input_path)  # 删除原始文件
+                logging.info(f"删除原始文件: {input_path}")
+                return output_path
+            else:
+                logging.error(f"格式转换失败: {input_filename}")
+                return None
+                
+        except subprocess.CalledProcessError as e:
+            logging.error(f"FFmpeg处理失败: {e}")
+            return None
+        except Exception as e:
+            logging.error(f"转换音频格式时发生错误: {str(e)}")
+            return None
     def start_file_monitoring(self,additional_folders=None) -> 'Observer':
         """
         启动文件监控

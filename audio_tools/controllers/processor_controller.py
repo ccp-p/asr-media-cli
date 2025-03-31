@@ -415,12 +415,18 @@ class ProcessorController:
     
     def _process_existing_files(self):
         """处理已存在的文件"""
+        
         media_files = []
         
         # 处理MP3文件
         mp3_files = [f for f in os.listdir(self.config['media_folder']) 
-                    if f.lower().endswith('.mp3')]
+                     if any(f.lower().endswith(ext) for ext in ['.mp3', '.aac', '.m4a'])
+                   ]
         media_files.extend(mp3_files)
+        # 处理视频文件 
+        nomalizeFuc =self.file_processor.nomallize_audio_format
+        # need input path as first param
+        media_files =  [nomalizeFuc(os.path.join(self.config["media_folder"],f)) for f in media_files]
         
         # 如果开启视频处理，获取视频文件
         if self.config['process_video']:
