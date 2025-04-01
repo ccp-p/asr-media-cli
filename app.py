@@ -26,23 +26,17 @@ def load_config():
         "media_folder": "D:/download/",
         "output_folder": "D:/download/output/",
         "temp_segments_dir": "D:/download/temp_segments/",
-        "asr_settings": {
-            "use_jianying_first": False,
-            "use_kuaishou": True, 
-            "use_bcut": True
-        },
-        "process_settings": {
-            "process_video": True,
-            "extract_audio_only": False,
-            "format_text": True,
-            "include_timestamps": True,
-            "max_part_time": 20,
-            "log_level": "NORMAL"
-        },
-        "monitoring": {
-            "enabled": True,
-            "additional_folders": ["D:/download/dest/"]
-        }
+        "use_jianying_first": False,
+        "use_kuaishou": True, 
+        "use_bcut": True,
+        "process_video": True,
+        "extract_audio_only": False,
+        "format_text": True,
+        "include_timestamps": True,
+        "max_part_time": 20,
+        "log_level": "NORMAL",
+        "watch": True,
+        "additional_folders": ["D:/download/dest/"]
     }
     
     config = load_json_file(CONFIG_FILE)
@@ -191,9 +185,9 @@ def toggle_monitor():
         
         # 更新监控设置
         if action == "start":
-            config["monitoring"]["enabled"] = True
+            config["watch"] = True
         else:
-            config["monitoring"]["enabled"] = False
+            config["watch"] = False
             
         save_json_file(CONFIG_FILE, config)
         
