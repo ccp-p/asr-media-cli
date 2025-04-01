@@ -34,9 +34,10 @@ loadLocalBtn.addEventListener('click', async () => {
     }
 });
 
-// 生成文件唯一ID
+// 简化的文件ID生成方法
 function generateUniqueFileId(filename) {
-    return 'file_' + Date.now() + '_' + encodeURIComponent(filename);
+    // 只使用时间戳，不包含任何文件名信息
+    return 'file_' + Date.now();
 }
 
 // 存储文件元数据
