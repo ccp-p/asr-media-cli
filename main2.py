@@ -107,7 +107,8 @@ def main():
             process_video=True,
             extract_audio_only=False,
             watch_mode=True,
-            max_part_time=20
+            max_part_time=20,
+            export_srt=True,  # 启用SRT导出
         )
         
         

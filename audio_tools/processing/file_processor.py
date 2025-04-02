@@ -177,7 +177,8 @@ class FileProcessor:
                 format_text: bool = True,
                 max_part_time: int = 20,
                 include_timestamps: bool = True,
-                max_retries: int = 3):
+                max_retries: int = 3,
+                export_srt: bool = False):
         """
         初始化文件处理器
         
@@ -193,6 +194,7 @@ class FileProcessor:
             format_text: 是否格式化文本
             include_timestamps: 是否包含时间戳
             max_retries: 最大重试次数
+            export_srt: 是否导出SRT字幕文件
         """
         self.media_folder = media_folder
         self.output_folder = output_folder
@@ -206,6 +208,7 @@ class FileProcessor:
         self.format_text = format_text
         self.include_timestamps = include_timestamps
         self.max_retries = max_retries
+        self.export_srt = export_srt
         self.processed_record_file = os.path.join(self.output_folder, "processed_audio_files.json")
         self.processed_audio = load_json_file(self.processed_record_file)
         self.interrupt_received = False
@@ -220,7 +223,8 @@ class FileProcessor:
             output_folder=output_folder,
             format_text=format_text,
             include_timestamps=include_timestamps,
-            progress_callback=progress_callback
+            progress_callback=progress_callback,
+            export_srt=export_srt  # 添加SRT导出选项
         )
         
     def set_interrupt_flag(self, value=True):
@@ -456,7 +460,7 @@ class FileProcessor:
         filename = os.path.basename(audio_path)
         logging.info(f"处理音频文件: {filename}")
         
-            # 获取音频时长
+        # 获取音频时长
         audio_duration = get_audio_duration(audio_path)
         if audio_duration <= 0:
             logging.error(f"无法获取音频时长: {filename}")
@@ -502,8 +506,8 @@ class FileProcessor:
                 "音频长度": f"{len(segment_files) * 30}秒"
             }
             
-            # 准备文本内容
-            result_text = self.text_processor.prepare_result_text(
+            # 准备文本内容和SRT分段数据
+            result_text, srt_segments = self.text_processor.prepare_result_text(
                 segment_files=segment_files,
                 segment_results=segment_results,
                 metadata=metadata
@@ -513,37 +517,39 @@ class FileProcessor:
                 logging.warning(f"无有效转写结果: {filename}")
                 return False
             
-            # 保存文本文件
-            output_file = self.text_processor.save_result_text(
+            # 保存文本文件和SRT字幕文件
+            output_files = self.text_processor.save_result_text(
                 text=result_text,
                 filename=filename,
+                metadata=metadata,
+                srt_segments=srt_segments
             )
+            
+            txt_file = output_files.get("txt", "")
+            srt_file = output_files.get("srt", "")
             
             if self.progress_callback:
                 self.progress_callback(
                     1,
                     1,
-                    f"文本生成完成: {os.path.basename(output_file)}"
+                    f"文件生成完成: {os.path.basename(txt_file)}"
                 )
                 
-            logging.info(f"转写结果已保存到: {output_file}")
+            logging.info(f"转写结果已保存到: {txt_file}")
+            if srt_file:
+                logging.info(f"SRT字幕已保存到: {srt_file}")
             
-            # self.processed_files[audio_path]["processed_parts"].append(part_num)
-            # self.processed_files[audio_path]["total_parts"] = total_parts
-            if(audio_path not in self.processed_audio):
+            # 更新处理记录
+            if audio_path not in self.processed_audio:
                 self.processed_audio[audio_path] = {}
             self.processed_audio[audio_path]["last_processed_time"] = time.strftime("%Y-%m-%d %H:%M:%S")
-            # self.processed_files[audio_path]["part_stats"] = part_stats
-            dest_audio_path = os.path.join(self.output_folder, os.path.basename(audio_path))
             
+            # 清理临时文件
+            dest_audio_path = os.path.join(self.output_folder, os.path.basename(audio_path))
             self._cleanup_audio_file(audio_path)
             self._cleanup_audio_file(dest_audio_path)
             
-            
             self._save_processed_records()
-            # 删除音频文件
-            
-            logging.info(f"删除音频文件: {audio_path}")
             return True
             
         except Exception as e:

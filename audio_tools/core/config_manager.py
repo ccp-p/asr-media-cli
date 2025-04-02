@@ -35,7 +35,8 @@ class ConfigManager:
         'temp_dir': None,
         'log_level': 'INFO',
         'log_file': None,
-        'max_part_time':20
+        'max_part_time': 20,
+        'export_srt': False  # 新增SRT导出选项，默认关闭
     }
 
     def __init__(self, config_file: Optional[str] = None):

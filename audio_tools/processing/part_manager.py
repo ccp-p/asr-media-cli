@@ -129,7 +129,8 @@ class PartManager:
         return output_dir
     
     def save_part_text(self, audio_path: str, part_idx: int, 
-                     text: str, processed_files: Dict) -> str:
+                     text: str, processed_files: Dict,
+                     srt_segments: Optional[List[Dict[str, Any]]] = None) -> Dict[str, str]:
         """
         保存part文本并更新处理状态
         
@@ -138,9 +139,10 @@ class PartManager:
             part_idx: part索引
             text: 转写文本
             processed_files: 已处理文件记录
+            srt_segments: 用于SRT导出的分段数据
             
         Returns:
-            保存的文件路径
+            包含保存的文件路径的字典，如 {"txt": "文本路径", "srt": "SRT路径"}
         """
         # 1. 创建输出文件夹
         output_dir = self.create_part_output_folder(audio_path)
@@ -156,6 +158,20 @@ class PartManager:
         
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(text)
+            
+        result_files = {"txt": output_path}
+        
+        # 3.1 如果有SRT分段数据，保存SRT文件
+        if srt_segments:
+            from .srt_exporter import SRTExporter
+            srt_exporter = SRTExporter(self.output_folder)
+            base_name = os.path.splitext(os.path.basename(audio_path))[0]
+            srt_file = srt_exporter.export_srt(
+                segments=srt_segments,
+                filename=base_name,
+                part_num=part_idx+1
+            )
+            result_files["srt"] = srt_file
         
         # 4. 更新part状态
         part_key = str(part_idx)
@@ -176,7 +192,8 @@ class PartManager:
         
         processed_files[audio_path] = file_record
         
-        return output_path
+        return result_files
+    
     def _extract_asr_info(self, file_record: Dict) -> Dict:
         """
         从文件记录中提取 ASR 相关信息

@@ -96,7 +96,8 @@ class ProcessorController:
             format_text=config['format_text'],
             include_timestamps=config['include_timestamps'],
             max_part_time=config['max_part_time'],
-            max_retries=config['max_retries']
+            max_retries=config['max_retries'],
+            export_srt=config['export_srt']  # 添加SRT导出选项
         )
             # 初始化任务管理器
         from ..processing.task_manager import TaskManager

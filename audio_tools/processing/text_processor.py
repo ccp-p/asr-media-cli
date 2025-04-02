@@ -6,8 +6,11 @@ import os
 import re
 import time
 import logging
-from typing import Dict, List, Optional, Any, Callable
+from typing import Dict, List, Optional, Any, Callable, Tuple
 from datetime import datetime
+
+# 导入SRT导出器
+from .srt_exporter import SRTExporter
 
 class TextFormatError(Exception):
     """文本格式化错误"""
@@ -22,7 +25,8 @@ class TextProcessor:
                 include_timestamps: bool = True,
                 progress_callback: Optional[Callable] = None,
                 max_segment_length: int = 2000,
-                min_segment_length: int = 10):
+                min_segment_length: int = 10,
+                export_srt: bool = False):
         """
         初始化文本处理器
         
@@ -33,6 +37,7 @@ class TextProcessor:
             progress_callback: 进度回调函数
             max_segment_length: 最大段落长度
             min_segment_length: 最小段落长度
+            export_srt: 是否导出SRT字幕文件
         """
         self.output_folder = output_folder
         self.format_text = format_text
@@ -40,12 +45,16 @@ class TextProcessor:
         self.progress_callback = progress_callback
         self.max_segment_length = max_segment_length
         self.min_segment_length = min_segment_length
+        self.export_srt = export_srt
+        
+        # 创建SRT导出器
+        self.srt_exporter = SRTExporter(output_folder)
         
     def prepare_result_text(self, 
                           segment_files: List[str], 
                           segment_results: Dict[int, str],
                           start_segment: int = 0,
-                          metadata: Optional[Dict[str, Any]] = None) -> str:
+                          metadata: Optional[Dict[str, Any]] = None) -> Tuple[str, List[Dict[str, Any]]]:
         """
         准备最终的识别结果文本
         
@@ -56,10 +65,10 @@ class TextProcessor:
             metadata: 可选的元数据信息
             
         Returns:
-            合并格式化后的文本
+            元组(合并格式化后的文本, 分段列表)，分段列表用于SRT导出
         """
         if not segment_files:
-            return ""
+            return "", []
         
         if self.progress_callback:
             self.progress_callback(
@@ -106,7 +115,6 @@ class TextProcessor:
                 if self.progress_callback:
                     self.progress_callback(0, 1, "正在格式化文本")
                 
-                
                 # 使用新的格式化方法
                 full_text = self.format_segment_text(
                     all_text,
@@ -130,7 +138,10 @@ class TextProcessor:
                 header = self._generate_metadata_header(metadata)
                 full_text = f"{header}\n\n{full_text}"
             
-            return full_text
+            # 创建用于SRT导出的分段列表
+            srt_segments = self.srt_exporter.convert_timestamps_to_segments(all_text, all_timestamps)
+            
+            return full_text, srt_segments
             
         except Exception as e:
             error_msg = f"格式化文本时出错: {str(e)}"
@@ -141,7 +152,8 @@ class TextProcessor:
                         text: str, 
                         filename: str, 
                         part_num: Optional[int] = None,
-                        metadata: Optional[Dict[str, Any]] = None) -> str:
+                        metadata: Optional[Dict[str, Any]] = None,
+                        srt_segments: Optional[List[Dict[str, Any]]] = None) -> Dict[str, str]:
         """
         保存转写结果到文件
         
@@ -150,10 +162,13 @@ class TextProcessor:
             filename: 原始音频文件名
             part_num: 可选的部分编号
             metadata: 可选的元数据信息
+            srt_segments: 用于SRT导出的分段列表
             
         Returns:
-            输出文件路径
+            包含输出文件路径的字典，如 {"txt": "文本路径", "srt": "SRT路径"}
         """
+        result_files = {}
+        
         try:
             base_name = os.path.splitext(filename)[0]
             
@@ -162,6 +177,7 @@ class TextProcessor:
                 output_file = os.path.join(output_subfolder, f"{base_name}_part{part_num}.txt")
             else:
                 output_file = os.path.join(self.output_folder, f"{base_name}.txt")
+            
             # 准备文件头信息
             header = f"# {base_name}"
             if part_num is not None:
@@ -175,7 +191,18 @@ class TextProcessor:
             with open(output_file, 'w', encoding='utf-8') as f:
                 f.write(f"{header}\n\n{text}")
             
-            return output_file
+            result_files["txt"] = output_file
+            
+            # 如果需要导出SRT且有分段数据
+            if self.export_srt and srt_segments:
+                srt_file = self.srt_exporter.export_srt(
+                    segments=srt_segments,
+                    filename=filename,
+                    part_num=part_num
+                )
+                result_files["srt"] = srt_file
+            
+            return result_files
             
         except Exception as e:
             error_msg = f"保存文本文件时出错: {str(e)}"
@@ -196,7 +223,6 @@ class TextProcessor:
         os.makedirs(output_subfolder, exist_ok=True)
         return output_subfolder
     
-    # 以下是参照TextFormatter实现的新方法
     def format_segment_text(self, 
                            segment_texts: List[str], 
                            timestamps: Optional[List[Dict[str, float]]] = None,
@@ -370,7 +396,6 @@ class TextProcessor:
         else:
             return f"{m:02d}:{s:02d}"
     
-    # 保留原有方法作为接口兼容，但内部使用新的实现
     def _format_text(self, 
                     texts: List[str], 
                     timestamps: Optional[List[Dict[str, int]]] = None) -> str:
