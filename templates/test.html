@@ -583,9 +583,9 @@
     <script src="https://cdn.jsdelivr.net/npm/dplayer@1.27.1/dist/DPlayer.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.4.6/dist/hls.min.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', async function () {
+        document.addEventListener('DOMContentLoaded', function () {
             // 当前视频的唯一标识符 - 使用视频名称作为标识
-            let videoPath = '';
+            let videoPath = './第八章event.mp4';
             let videoId = encodeURIComponent(videoPath); // 编码以便安全存储
 
             // 从localStorage读取保存的播放时间和字幕信息
@@ -1367,7 +1367,19 @@
             let selectedLocalFile = null;
 
             // 初始加载时检查是否有视频
+            window.addEventListener('DOMContentLoaded', () => {
+                // 检查是否有保存的最近视频
+                loadRecentVideos();
 
+                // 如果没有视频源，则显示选择面板
+                if (!videoPath || videoPath === './第八章event.mp4') {
+                    setTimeout(() => {
+                        sourcePanel.style.display = 'flex';
+                    }, 500);
+                } else {
+                    sourcePanel.style.display = 'none';
+                }
+            });
 
             // 打开选择视频源面板
             changeSourceBtn.addEventListener('click', () => {
@@ -1449,187 +1461,15 @@
             // 增强的本地文件处理功能，使用File System Access API
             let lastLocalFileHandle = null;  // 存储文件句柄
 
-            // 加载本地文件时的处理
+            // 修改本地视频加载函数
             loadLocalBtn.addEventListener('click', async () => {
                 if (selectedLocalFile) {
                     const objectURL = URL.createObjectURL(selectedLocalFile);
-
-                    // 先加载视频文件
+                    // 直接加载选中的文件，不尝试获取文件句柄
                     loadVideo(objectURL, selectedLocalFile.name, 'local');
-
-                    // 如果浏览器支持文件系统访问API，尝试请求持久化权限
-                    if ('showOpenFilePicker' in window) {
-                        try {
-                            // 显示一个选项，让用户决定是否记住文件位置
-                            const shouldRequestPermission = confirm('是否允许网页记住这个文件位置？（下次打开可以自动加载）');
-
-                            if (shouldRequestPermission) {
-                                // 生成文件ID
-                                const fileId = generateUniqueFileId(selectedLocalFile.name);
-
-                                // 存储文件基本信息（用于自动恢复）
-                                storeFileMetadata(selectedLocalFile, fileId);
-
-                                dp.notice('已记住文件位置，刷新页面后会尝试自动恢复', 3000);
-                            }
-                        } catch (e) {
-                            console.log('用户未授予持久访问权限或操作被取消', e);
-                        }
-                    }
-                } else {
-                    alert('请先选择一个视频文件');
                 }
+
             });
-
-     // 简化的文件ID生成方法
-function generateUniqueFileId(filename) {
-    // 只使用时间戳，不包含任何文件名信息
-    return 'file_' + Date.now();
-}
-
-            // 存储文件元数据
-            function storeFileMetadata(file, fileId) {
-                const fileInfo = {
-                    id: fileId,
-                    name: file.name,
-                    size: file.size,
-                    type: file.type,
-                    lastModified: file.lastModified,
-                    timestamp: Date.now(),
-                    path: file.webkitRelativePath || ''
-                };
-
-                // 存储文件元数据
-                localStorage.setItem('lastVideoFileInfo', JSON.stringify(fileInfo));
-
-                // 同时更新最近视频记录
-                let recentVideos = JSON.parse(localStorage.getItem('recentVideos') || '[]');
-                const index = recentVideos.findIndex(v => v.name === file.name && v.type === 'local');
-
-                if (index !== -1) {
-                    recentVideos[index].fileInfo = fileInfo;
-                    localStorage.setItem('recentVideos', JSON.stringify(recentVideos));
-                }
-            }
-
-
-            // 在页面加载时尝试恢复上次的本地视频
-            async function tryRestoreLastLocalVideo() {
-                // 检查浏览器支持
-                if (!('showOpenFilePicker' in window)) {
-                    console.log('本浏览器不支持文件系统访问API');
-                    return false;
-                }
-
-                try {
-                    // 获取上次保存的文件信息
-                    const fileInfoJson = localStorage.getItem('lastVideoFileInfo');
-                    if (!fileInfoJson) return false;
-
-                    const fileInfo = JSON.parse(fileInfoJson);
-                    console.log('尝试恢复上次的本地视频:', fileInfo.name);
-
-                    // 提示用户
-                    const shouldRestore = confirm(`是否恢复上次播放的本地视频: ${fileInfo.name}?`);
-                    if (!shouldRestore) return false;
-
-                    // 使用文件选择器，尝试定位到上次的文件
-                    const opts = {
-                        id: fileInfo.id,
-                        startIn: 'downloads',  // 假设视频通常在下载文件夹
-                        types: [{
-                            description: '视频文件',
-                            accept: { 'video/*': ['.mp4', '.webm', '.ogg', '.mov'] }
-                        }]
-                    };
-
-                    const [fileHandle] = await window.showOpenFilePicker(opts);
-                    const file = await fileHandle.getFile();
-
-                    // 验证是否是相同/相似的文件
-                    const isSimilarFile = file.name === fileInfo.name ||
-                        (file.size === fileInfo.size &&
-                            file.type === fileInfo.type);
-
-                    if (isSimilarFile) {
-                        console.log('成功恢复文件:', file.name);
-
-                        // 加载视频
-                        const objectURL = URL.createObjectURL(file);
-                        loadVideo(objectURL, file.name, 'local');
-
-                        // 保存句柄到内存中
-                        fileHandleStorage[fileInfo.id] = fileHandle;
-
-                        dp.notice(`已自动恢复上次的本地视频: ${file.name}`, 3000);
-                        return true;
-                    } else {
-                        console.log('找到的文件与记录不匹配');
-                        return false;
-                    }
-                } catch (e) {
-                    console.log('恢复本地视频失败:', e);
-                    return false;
-                }
-            }
-
-
-            // 更新最近视频列表中的文件句柄信息
-            function updateRecentVideoFileHandleInfo(fileName, fileHandleId) {
-                let recentVideos = JSON.parse(localStorage.getItem('recentVideos') || '[]');
-                const index = recentVideos.findIndex(v => v.name === fileName && v.type === 'local');
-
-                if (index !== -1) {
-                    recentVideos[index].fileHandleId = fileHandleId;
-                    localStorage.setItem('recentVideos', JSON.stringify(recentVideos));
-                }
-            }
-            // 修复文件系统API实现，使本地文件可以被记住
-            let fileHandleStorage = {}; // 存储文件句柄
-
-            // 初始化时尝试恢复文件句柄
-            async function initFileSystemAccess() {
-                // 检查浏览器支持
-                if (!('showOpenFilePicker' in window)) {
-                    console.log('本浏览器不支持文件系统访问API，无法记忆本地文件位置');
-                    return;
-                }
-
-                try {
-                    // 尝试读取上次打开的本地视频信息
-                    const recentVideos = JSON.parse(localStorage.getItem('recentVideos') || '[]');
-                    const lastLocalVideo = recentVideos.find(v => v.type === 'local');
-
-                    if (lastLocalVideo && lastLocalVideo.fileHandleId) {
-                        // 用户有之前授权过的本地文件
-                        console.log('尝试访问上次打开的本地文件:', lastLocalVideo.name);
-
-                        try {
-                            // 尝试获取已保存的文件句柄
-                            const fileHandle = await window.launchQueue.files[0];
-                            if (fileHandle) {
-                                const file = await fileHandle.getFile();
-                                console.log('成功获取文件:', file.name);
-
-                                // 创建并加载视频
-                                const objectURL = URL.createObjectURL(file);
-                                loadVideo(objectURL, file.name, 'local');
-
-                                // 存储句柄供后续使用
-                                fileHandleStorage[lastLocalVideo.fileHandleId] = fileHandle;
-
-                                // 提示用户已自动加载上次的视频
-                                dp.notice(`已自动加载上次的本地视频: ${file.name}`, 3000);
-                                return;
-                            }
-                        } catch (e) {
-                            console.log('获取文件失败，需要重新选择文件', e);
-                        }
-                    }
-                } catch (e) {
-                    console.error('初始化文件系统访问时出错', e);
-                }
-            }
 
             // 获取文件句柄
             async function getFileHandle(file) {
@@ -1858,19 +1698,22 @@ function generateUniqueFileId(filename) {
                     type.className = 'recent-video-type';
                     type.textContent = video.type === 'local' ? '本地' : '网络';
 
-                    // 如果是有文件信息的本地文件，添加一个指示器
-                    if (video.type === 'local' && video.fileInfo) {
-                        type.textContent += ' ✓';
-                        type.title = '此文件有保存位置信息';
-                    }
-
                     item.appendChild(title);
                     item.appendChild(type);
 
                     // 点击加载视频
                     item.addEventListener('click', async () => {
                         if (video.type === 'local') {
-                            handleLocalVideoHistoryClick(video);
+                            // 去掉自动尝试使用File System Access API的代码
+                            // 直接提示用户需要重新选择文件
+                            alert(`请重新选择本地文件: ${video.name}`);
+                            sourceTabs[0].click();
+
+                            // 自动打开文件选择对话框，提高用户体验
+                            setTimeout(() => {
+                                if (localFileInput) localFileInput.click();
+                            }, 500);
+
                         } else {
                             // 网络视频可以直接加载
                             loadVideo(video.src, video.name, 'url');
@@ -1880,6 +1723,8 @@ function generateUniqueFileId(filename) {
                     recentVideosList.appendChild(item);
                 });
             }
+
+
             // 视频切换时需要更新原始videoPath变量以保持兼容性
             videoPath = document.querySelector('script').textContent.match(/videoPath\s*=\s*['"]([^'"]+)['"]/)?.[1] || './第八章event.mp4';
             videoId = encodeURIComponent(videoPath);
@@ -1887,16 +1732,18 @@ function generateUniqueFileId(filename) {
             let subtitleMappings = {};
 
             // 初始化时加载保存的字幕映射
-            // 加载保存的字幕映射关系
-            const savedSubtitleMappings = localStorage.getItem('subtitleMappings');
-            if (savedSubtitleMappings) {
-                try {
-                    subtitleMappings = JSON.parse(savedSubtitleMappings);
-                } catch (e) {
-                    console.error('无法解析保存的字幕映射', e);
-                    subtitleMappings = {};
+            window.addEventListener('DOMContentLoaded', () => {
+                // 加载保存的字幕映射关系
+                const savedSubtitleMappings = localStorage.getItem('subtitleMappings');
+                if (savedSubtitleMappings) {
+                    try {
+                        subtitleMappings = JSON.parse(savedSubtitleMappings);
+                    } catch (e) {
+                        console.error('无法解析保存的字幕映射', e);
+                        subtitleMappings = {};
+                    }
                 }
-            }
+            });
 
             // 修改保存字幕内容的函数，将字幕与视频建立关联
             function saveSubtitleContent(videoId, subtitleContent, subtitleName, isVisible) {
@@ -2125,78 +1972,9 @@ function generateUniqueFileId(filename) {
             } else {
                 console.log('本浏览器不支持文件系统访问API');
             }
-            // 尝试恢复上次的本地视频
-            const restored = await tryRestoreLastLocalVideo();
+
             // 检查是否有保存的最近视频
             loadRecentVideos();
-
-            // 点击历史记录中的本地视频项时
-            function handleLocalVideoHistoryClick(video) {
-                if (video.fileInfo) {
-                    // 提示用户
-                    const shouldRestore = confirm(`是否尝试加载本地视频: ${video.name}?`);
-                    if (!shouldRestore) return;
-
-                    // 尝试通过文件信息恢复
-                    tryRestoreVideoByInfo(video.fileInfo).then(success => {
-                        if (!success) {
-                            // 如果无法恢复，提示用户选择文件
-                            alert(`无法自动恢复，请重新选择本地文件: ${video.name}`);
-                            sourceTabs[0].click();
-                            setTimeout(() => {
-                                if (localFileInput) localFileInput.click();
-                            }, 500);
-                        }
-                    });
-                } else {
-                    // 如果没有文件信息，直接提示选择
-                    alert(`请重新选择本地文件: ${video.name}`);
-                    sourceTabs[0].click();
-                    setTimeout(() => {
-                        if (localFileInput) localFileInput.click();
-                    }, 500);
-                }
-            }
-
-            // 尝试通过文件信息恢复视频
-            async function tryRestoreVideoByInfo(fileInfo) {
-                if (!('showOpenFilePicker' in window)) return false;
-
-                try {
-                    const opts = {
-                        id: fileInfo.id,
-                        startIn: 'downloads',
-                        types: [{
-                            description: '视频文件',
-                            accept: { 'video/*': ['.mp4', '.webm', '.ogg', '.mov'] }
-                        }]
-                    };
-
-                    const [fileHandle] = await window.showOpenFilePicker(opts);
-                    const file = await fileHandle.getFile();
-
-                    // 验证是否是相同/相似的文件
-                    const isSimilarFile = file.name === fileInfo.name ||
-                        (file.size === fileInfo.size &&
-                            file.type === fileInfo.type);
-
-                    if (isSimilarFile) {
-                        // 加载视频
-                        const objectURL = URL.createObjectURL(file);
-                        loadVideo(objectURL, file.name, 'local');
-
-                        // 保存句柄到内存中
-                        fileHandleStorage[fileInfo.id] = fileHandle;
-
-                        sourcePanel.style.display = 'none';
-                        return true;
-                    }
-                    return false;
-                } catch (e) {
-                    console.log('恢复视频失败:', e);
-                    return false;
-                }
-            }
 
             // 如果没有视频源，则显示选择面板
             if (!videoPath || videoPath === './第八章event.mp4') {
