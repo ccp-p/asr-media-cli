@@ -1,0 +1,52 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: 当前文件",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Python: 特性测试工具",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/tools/feature_tester.py",
+            "args": ["${input:audioFile}", "--feature", "${input:featureType}","--asr-service", "${input:asrService}"],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Python: 调试教程",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/tools/pdb_tutorial.py",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        }
+    ],
+    "inputs": [
+        {
+            "id": "audioFile",
+            "type": "promptString",
+            "description": "音频文件路径",
+            "default": "D:\\download\\socialMp3\\1.三秒找到开场话题.mp3"
+        },
+        {
+            "id": "featureType",
+            "type": "pickString",
+            "description": "选择要测试的功能",
+            "options": ["asr", "extract", "transcribe", "text", "full"],
+            "default": "asr"
+        },
+        {
+            "id": "asrService",
+            "type": "pickString",
+            "description": "选择要测试的功能",
+            "options": ["jianying", "kuaishou", "bcut"],
+            "default": "bcut"
+        }
+    ]
+}
