@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -84,10 +85,52 @@ func InitLogger(level string, logFile string) error {
 	return nil
 }
 
+// CustomTimeHook 自定义时间格式钩子
+type CustomTimeHook struct{}
+
+// Fire 在每条日志消息上执行
+func (h *CustomTimeHook) Fire(entry *logrus.Entry) error {
+    // 使用自定义格式化时间
+    timeStr := time.Now().Format("20060102150405") // Go的时间格式模板
+    entry.Data["time"] = timeStr
+    return nil
+}
+
+// Levels 定义此钩子应用于哪些级别的日志
+func (h *CustomTimeHook) Levels() []logrus.Level {
+    return logrus.AllLevels
+}
+
+
+// 创建一个自定义的日志格式化器
+type TerminalSafeFormatter struct {
+    originalFormatter logrus.Formatter
+}
+
+func (f *TerminalSafeFormatter) Format(entry *logrus.Entry) ([]byte, error) {
+    // 在每条日志前确保有一个新行
+    formattedEntry, err := f.originalFormatter.Format(entry)
+    if err != nil {
+        return nil, err
+    }
+    
+    // 添加新行前缀
+    return append([]byte("\n"), formattedEntry...), nil
+}
+
 // EnableTerminalProgress 启用终端进度条模式 - 调用此函数后日志将不再输出到终端
 func EnableTerminalProgress() {
 	terminalProgressEnabled = true
-	// 重新初始化日志，应用设置
+
+	baseFormatter := &logrus.TextFormatter{
+        FullTimestamp:   true,
+        TimestampFormat: "2006-01-02 15:04:05", // 或者你想要的格式
+    }
+	logrus.SetFormatter(&TerminalSafeFormatter{
+		originalFormatter: baseFormatter,
+    })
+
+
 	currentLevel := Log.GetLevel().String()
 	InitLogger(currentLevel, "")
 }

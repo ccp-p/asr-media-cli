@@ -24,7 +24,6 @@ var (
 	configFile    = flag.String("config", "", "配置文件路径")
 	logLevel      = flag.String("log-level", "info", "日志级别 (debug, info, warn, error)")
 	logFile       = flag.String("log-file", "", "日志文件路径")
-	noProgressBar = flag.Bool("no-progress", false, "禁用进度条")
 	config        = models.NewDefaultConfig() // 配置对象
 )
 
@@ -117,7 +116,7 @@ func main() {
 	utils.InitLogger(*logLevel, *logFile)
 
 	// 初始化进度管理器
-	progressManager = ui.NewProgressManager(!*noProgressBar)
+	progressManager = ui.NewProgressManager()
 
 	// 打印欢迎信息
 	printWelcome()
@@ -133,7 +132,9 @@ func main() {
 
 	// 处理媒体文件
 	processMedia()
-
+    // 程序结束前恢复日志输出到控制台
+    utils.DisableTerminalProgress()
+	
 	// 处理完成后，清理所有进度条
 	if progressManager != nil {
 		progressManager.CloseAll("已完成")

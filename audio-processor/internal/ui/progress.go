@@ -107,3 +107,32 @@ func formatDuration(d time.Duration) string {
 	seconds := int(d.Seconds()) % 60
 	return fmt.Sprintf("%02d:%02d", minutes, seconds)
 }
+// String 返回进度条的字符串表示
+func (pb *ProgressBar) String() string {
+    percent := float64(pb.Current) / float64(pb.Total) * 100
+    bar := renderProgressBar(pb.Current, pb.Total, 30)
+    
+    // 注意这里使用 %% 来输出真实的百分号
+    return fmt.Sprintf("%s %s %3.0f%% | %d/%d", 
+        pb.Prefix, 
+        bar, 
+        percent, 
+        pb.Current, 
+        pb.Total)
+}
+func renderProgressBar(current, total, width int) string {
+    percent := float64(current) / float64(total)
+    filled := int(percent * float64(width))
+    
+    bar := "["
+    for i := 0; i < width; i++ {
+        if i < filled {
+            bar += "█"
+        } else {
+            bar += "░"
+        }
+    }
+    bar += "]"
+    
+    return bar
+}
