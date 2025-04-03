@@ -24,7 +24,7 @@ var (
 	logLevel      = flag.String("log-level", "info", "日志级别 (debug, info, warn, error)")
 	logFile       = flag.String("log-file", "", "日志文件路径")
 	noProgressBar = flag.Bool("no-progress", false, "禁用进度条")
-	config 		  = models.NewDefaultConfig() // 配置对象
+	config        = models.NewDefaultConfig() // 配置对象
 )
 
 // 创建全局进度管理器
@@ -54,12 +54,20 @@ func processMedia() {
 	defer os.RemoveAll(tempDir)
 
 	// 创建批处理器
-	processor := audio.NewBatchProcessor(*mediaDir, *outputDir, tempDir, batchProgressCallback,config)
+	processor := audio.NewBatchProcessor(*mediaDir, *outputDir, tempDir, batchProgressCallback, config)
 	processor.MaxConcurrency = 4 // 设置最大并发数
-	
+
 	// 设置进度管理器
 	if progressManager != nil {
 		processor.SetProgressManager(progressManager)
+	}
+
+	// 启动片段监控
+	var stopMonitoring func()
+	if progressManager != nil {
+		progressManager.CreateProgressBar("segments_monitor", 100, "片段监控", "等待处理开始...")
+		stopMonitoring = utils.StartSegmentMonitoring(tempDir, progressManager)
+		defer stopMonitoring() // 确保在函数结束时停止监控
 	}
 
 	// 处理所有文件
@@ -67,6 +75,11 @@ func processMedia() {
 	results, err := processor.ProcessVideoFiles()
 	if err != nil {
 		logrus.Fatalf("处理文件失败: %v", err)
+	}
+
+	// 停止片段监控
+	if stopMonitoring != nil {
+		stopMonitoring()
 	}
 
 	// 统计结果
@@ -119,12 +132,12 @@ func main() {
 
 	// 处理媒体文件
 	processMedia()
-	
+
 	// 处理完成后，清理所有进度条
 	if progressManager != nil {
 		progressManager.CloseAll("已完成")
 	}
-	
+
 	// 打印处理完成消息
 	color.Green("\n所有处理任务已完成!")
 }
