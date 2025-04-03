@@ -16,8 +16,8 @@ import (
 )
 
 var (
+	mediaDir   = flag.String("media", "D:/download/", "媒体文件目录")
 	outputDir  = flag.String("output", "D:/download/dest", "输出目录")
-	tempDir    = flag.String("temp", "./temp", "临时文件目录")
 	configFile = flag.String("config", "", "配置文件路径")
 	logLevel   = flag.String("log-level", "info", "日志级别 (debug, info, warn, error)")
 	logFile    = flag.String("log-file", "", "日志文件路径")
@@ -48,7 +48,7 @@ func main() {
 	}
 	
 	// 创建处理器
-	mediaProc := processor.NewMediaProcessor(config.OutputFolder, *tempDir)
+	mediaProc := processor.NewMediaProcessor(config.OutputFolder)
 	
 	// 扫描媒体文件
 	mediaScanner := scanner.NewMediaScanner()
@@ -136,7 +136,7 @@ func checkDependencies() bool {
 	fmt.Print("检查系统依赖... ")
 	
 	// 检查ffmpeg
-	cmd := processor.NewMediaProcessor("", "")
+	cmd := processor.NewMediaProcessor("")
 	if !cmd.CheckFFmpeg() {
 		color.Red("失败")
 		logrus.Error("未检测到FFmpeg，请确保FFmpeg已安装并添加到系统路径")

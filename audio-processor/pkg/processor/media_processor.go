@@ -27,20 +27,18 @@ type MediaInfo struct {
 
 // MediaProcessor 媒体处理器
 type MediaProcessor struct {
+	mediaDir     string              // 媒体文件目录
 	OutputDir     string              // 输出目录
-	TempDir       string              // 临时目录
 	ProcessedInfo map[string]struct{} // 已处理文件记录
 }
 
 // NewMediaProcessor 创建新的媒体处理器
-func NewMediaProcessor(outputDir, tempDir string) *MediaProcessor {
+func NewMediaProcessor(outputDir string) *MediaProcessor {
 	// 确保目录存在
 	os.MkdirAll(outputDir, 0755)
-	os.MkdirAll(tempDir, 0755)
 	
 	return &MediaProcessor{
 		OutputDir:     outputDir,
-		TempDir:       tempDir,
 		ProcessedInfo: make(map[string]struct{}),
 	}
 }
@@ -128,30 +126,11 @@ func (p *MediaProcessor) ProcessFile(filePath string) (string, error) {
 	}
 	
 	// 获取媒体信息
-	info, err := p.GetMediaInfo(filePath)
+	_, err := p.GetMediaInfo(filePath)
 	if err != nil {
 		return "", err
 	}
 	
-	// 生成分析报告
-	result := fmt.Sprintf(
-		"文件分析报告: %s\n"+
-			"====================\n"+
-			"格式: %s\n"+
-			"时长: %s\n"+
-			"采样率: %d Hz\n"+
-			"声道数: %d\n"+
-			"比特率: %d kbps\n"+
-			"文件大小: %s\n"+
-			"====================\n",
-		info.Name,
-		info.Format,
-		utils.FormatChineseTimeDuration(info.Duration),
-		info.SampleRate,
-		info.Channels,
-		info.Bitrate,
-		utils.FormatFileSize(info.Size),
-	)
 	
 	// 将文件标记为已处理
 	p.ProcessedInfo[filePath] = struct{}{}
@@ -159,14 +138,14 @@ func (p *MediaProcessor) ProcessFile(filePath string) (string, error) {
 	// 计算处理时间
 	processingTime := time.Since(startTime).Seconds()
 	
-	return result + fmt.Sprintf("处理用时: %s\n", utils.FormatChineseTimeDuration(processingTime)), nil
+	return  fmt.Sprintf("处理用时: %s\n", utils.FormatChineseTimeDuration(processingTime)), nil
 }
 
 // ExtractAudioFromVideo 从视频文件提取音频
 func (p *MediaProcessor) ExtractAudioFromVideo(videoPath string) (string, error) {
 	// 创建输出文件路径
 	baseName := strings.TrimSuffix(filepath.Base(videoPath), filepath.Ext(videoPath))
-	audioPath := filepath.Join(p.TempDir, baseName+".mp3")
+	audioPath := filepath.Join(p.OutputDir, baseName+".mp3")
 	
 	// 调用ffmpeg提取音频
 	cmd := exec.Command(

@@ -41,52 +41,60 @@ func (s *MediaScanner) ScanDirectory(dir string) ([]MediaFile, error) {
 
 	logrus.Infof("开始扫描目录: %s", dir)
 	
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		
-		// 跳过目录和隐藏文件
-		if info.IsDir() || strings.HasPrefix(info.Name(), ".") {
-			return nil
-		}
-		
-		ext := strings.ToLower(filepath.Ext(path))
-		
-		// 检查是否为音频文件
-		isAudio := false
-		for _, audioExt := range s.AudioExtensions {
-			if ext == audioExt {
-				isAudio = true
-				break
-			}
-		}
-		
-		// 检查是否为视频文件
-		isVideo := false
-		for _, videoExt := range s.VideoExtensions {
-			if ext == videoExt {
-				isVideo = true
-				break
-			}
-		}
-		
-		// 如果是媒体文件，添加到结果列表
-		if isAudio || isVideo {
-			mediaFiles = append(mediaFiles, MediaFile{
-				Path:      path,
-				Name:      info.Name(),
-				Ext:       ext,
-				Size:      info.Size(),
-				ModTime:   info.ModTime(),
-				IsVideo:   isVideo,
-				IsAudio:   isAudio,
-				Processed: false,
-			})
-		}
-		
-		return nil
-	})
+	  // 读取目录内容（非递归）
+	  entries, err := os.ReadDir(dir)
+	  if err != nil {
+		  return nil, err
+	  }
+	  
+	  for _, entry := range entries {
+		  // 跳过目录和隐藏文件
+		  if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			  continue
+		  }
+		  
+		  // 获取文件信息
+		  info, err := entry.Info()
+		  if err != nil {
+			  logrus.Warnf("获取文件信息失败: %v", err)
+			  continue
+		  }
+		  
+		  path := filepath.Join(dir, entry.Name())
+		  ext := strings.ToLower(filepath.Ext(path))
+		  
+		  // 检查是否为音频文件
+		  isAudio := false
+		  for _, audioExt := range s.AudioExtensions {
+			  if ext == audioExt {
+				  isAudio = true
+				  break
+			  }
+		  }
+		  
+		  // 检查是否为视频文件
+		  isVideo := false
+		  for _, videoExt := range s.VideoExtensions {
+			  if ext == videoExt {
+				  isVideo = true
+				  break
+			  }
+		  }
+		  
+		  // 如果是媒体文件，添加到结果列表
+		  if isAudio || isVideo {
+			  mediaFiles = append(mediaFiles, MediaFile{
+				  Path:      path,
+				  Name:      entry.Name(),
+				  Ext:       ext,
+				  Size:      info.Size(),
+				  ModTime:   info.ModTime(),
+				  IsVideo:   isVideo,
+				  IsAudio:   isAudio,
+				  Processed: false,
+			  })
+		  }
+	  }
 	
 	logrus.Infof("扫描完成，共找到 %d 个媒体文件", len(mediaFiles))
 	

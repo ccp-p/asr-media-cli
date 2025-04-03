@@ -1,20 +1,24 @@
 {
     "version": "0.2.0",
     "configurations": [
+        // go
+        {
+          "name": "Go: Launch",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/audio-processor/cmd/audioproc/main.go",
+            "env": {
+                "GO_ENV": "development"
+            },
+            "console": "integratedTerminal",
+        },
         {
             "name": "Attach to Chrome",
             "port": 9222,
             "request": "attach",
             "type": "chrome",
             "webRoot": "${workspaceFolder}"
-        },
-        {
-            "name": "Python: 当前文件",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${file}",
-            "console": "integratedTerminal",
-            "justMyCode": true
         },
         {
             "name": "Python: 特性测试工具",
