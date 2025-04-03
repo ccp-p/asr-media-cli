@@ -62,7 +62,7 @@ func NewDefaultConfig() *Config {
         ShowProgress:      true,
         ProcessVideo:      true,
         ExtractAudioOnly:  false,
-        WatchMode:         false,
+        WatchMode:         true,
         SegmentLength:     30,
         MaxSegmentLength:  2000,
         MinSegmentLength:  10,

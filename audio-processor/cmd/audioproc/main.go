@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/fatih/color"
 	"github.com/sirupsen/logrus"
 
+	"github.com/ccp-p/asr-media-cli/audio-processor/internal/adapters"
 	"github.com/ccp-p/asr-media-cli/audio-processor/internal/ui"
 	"github.com/ccp-p/asr-media-cli/audio-processor/internal/watcher"
 	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/audio"
@@ -108,6 +111,83 @@ func processMedia() {
 	}
 }
 
+// startWatchMode 启动监听模式，同时监控下载目录和媒体目录
+func startWatchMode(config *models.Config) {
+	// 确保目录存在
+	downloadDir := config.OutputFolder // 下载目录，通常是输出目录
+	mediaDir := config.MediaFolder     // 媒体目录
+
+	os.MkdirAll(downloadDir, 0755)
+	os.MkdirAll(mediaDir, 0755)
+
+	// 创建临时目录
+	tempDir, err := ioutil.TempDir("", "audio-processor-watch")
+	if err != nil {
+		logrus.Fatalf("创建临时目录失败: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// 创建批处理器
+	processor := audio.NewBatchProcessor(
+		config.MediaFolder,
+		config.OutputFolder,
+		tempDir,
+		batchProgressCallback,
+		config,
+	)
+
+	// 设置进度管理器
+	if progressManager != nil {
+		processor.SetProgressManager(progressManager)
+	}
+
+	// 创建处理器适配器
+	processorAdapter := adapters.NewBatchProcessorAdapter(processor)
+
+	fmt.Println("启动监听模式...")
+
+	// 启动片段监控
+	var stopSegmentMonitoring func()
+	if progressManager != nil {
+		progressManager.CreateProgressBar("segments_monitor", 100, "片段监控", "等待处理开始...")
+		stopSegmentMonitoring = watcher.StartSegmentMonitoring(tempDir, progressManager)
+	}
+
+	// 1. 启动下载目录监控，将文件移动到媒体目录
+	fmt.Printf("监控下载目录: %s -> %s\n", config.OutputFolder, config.MediaFolder)
+	stopDownloadMonitor, err := watcher.StartFolderMonitoring(config.OutputFolder, config.MediaFolder)
+	if err != nil {
+		logrus.Fatalf("启动下载目录监控失败: %v", err)
+	}
+
+	// 2. 启动媒体目录监控，处理媒体文件
+	fmt.Printf("监控媒体目录: %s\n", config.MediaFolder)
+	stopMediaMonitor, err := watcher.StartMediaFolderMonitoring(config.MediaFolder, processorAdapter, progressManager)
+	if err != nil {
+		stopDownloadMonitor() // 如果失败，停止之前启动的监控
+		if stopSegmentMonitoring != nil {
+			stopSegmentMonitoring()
+		}
+		logrus.Fatalf("启动媒体目录监控失败: %v", err)
+	}
+
+	// 提示用户如何退出
+	fmt.Println("\n监控已启动，按Ctrl+C退出...")
+
+	// 等待用户中断
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	<-c
+
+	fmt.Println("\n正在停止监控...")
+	stopDownloadMonitor()
+	stopMediaMonitor()
+	if stopSegmentMonitoring != nil {
+		stopSegmentMonitoring()
+	}
+	fmt.Println("监控已停止")
+}
+
 func main() {
 	// 解析命令行参数
 	flag.Parse()
@@ -130,11 +210,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	// 检查是否启用监听模式
+	if config.WatchMode {
+		startWatchMode(config)
+		return
+	}
+
 	// 处理媒体文件
 	processMedia()
-    // 程序结束前恢复日志输出到控制台
-    utils.DisableTerminalProgress()
-	
+	// 程序结束前恢复日志输出到控制台
+	utils.DisableTerminalProgress()
+
 	// 处理完成后，清理所有进度条
 	if progressManager != nil {
 		progressManager.CloseAll("已完成")
