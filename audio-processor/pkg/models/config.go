@@ -53,7 +53,7 @@ func NewDefaultConfig() *Config {
         MediaFolder:       "./media",
         OutputFolder:      "./output",
         MaxRetries:        3,
-        MaxWorkers:        4,
+        MaxWorkers:        8,
         UseJianyingFirst:  true,
         UseKuaishou:       true,
         UseBcut:           true,
