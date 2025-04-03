@@ -2,6 +2,13 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Attach to Chrome",
+            "port": 9222,
+            "request": "attach",
+            "type": "chrome",
+            "webRoot": "${workspaceFolder}"
+        },
+        {
             "name": "Python: 当前文件",
             "type": "debugpy",
             "request": "launch",
@@ -19,10 +26,10 @@
             "justMyCode": true
         },
         {
-            "name": "Python: 调试教程",
+            "name": "Python: 调试main2",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/tools/pdb_tutorial.py",
+            "program": "${workspaceFolder}/main2.py",
             "console": "integratedTerminal",
             "justMyCode": true
         }
