@@ -1,10 +1,12 @@
 package models
 
 import (
-    "encoding/json"
-    "github.com/sirupsen/logrus"
-    "os"
-    "path/filepath"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/sirupsen/logrus"
 )
 
 // Config 表示应用程序的配置
@@ -40,7 +42,9 @@ type ConfigValidationError struct {
 }
 
 func (e ConfigValidationError) Error() string {
-    return logrus.Errorf("配置验证错误: %s - %s", e.Field, e.Message).Error()
+    msg := fmt.Sprintf("配置验证错误: %s - %s", e.Field, e.Message)
+    logrus.Error(msg)  // 记录日志
+    return msg         // 返回错误信息
 }
 
 // NewDefaultConfig 创建默认配置
