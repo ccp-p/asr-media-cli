@@ -12,6 +12,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/ccp-p/asr-media-cli/audio-processor/internal/ui"
+	"github.com/ccp-p/asr-media-cli/audio-processor/internal/watcher"
 	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/audio"
 	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/models"
 	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/utils"
@@ -66,7 +67,7 @@ func processMedia() {
 	var stopMonitoring func()
 	if progressManager != nil {
 		progressManager.CreateProgressBar("segments_monitor", 100, "片段监控", "等待处理开始...")
-		stopMonitoring = utils.StartSegmentMonitoring(tempDir, progressManager)
+		stopMonitoring = watcher.StartSegmentMonitoring(tempDir, progressManager)
 		defer stopMonitoring() // 确保在函数结束时停止监控
 	}
 

@@ -19,6 +19,8 @@ const (
 var (
 	// Log 全局日志实例
 	Log *logrus.Logger
+	// 定义一个全局变量，用于标记是否启用了终端进度条
+	terminalProgressEnabled bool
 )
 
 // InitLogger 初始化日志系统
@@ -35,7 +37,19 @@ func InitLogger(level string, logFile string) error {
 	})
 	
 	// 设置日志输出
-	if logFile != "" {
+	if terminalProgressEnabled {
+		// 如果没有指定日志文件，则创建一个临时日志文件
+		if logFile == "" {
+			tempDir := os.TempDir()
+			logFile = filepath.Join(tempDir, "audio-processor.log")
+		}
+		
+		// 打开日志文件
+		file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		if err == nil {
+			Log.SetOutput(file)
+		}
+	} else if logFile != "" {
 		// 确保日志目录存在
 		logDir := filepath.Dir(logFile)
 		if err := os.MkdirAll(logDir, 0755); err != nil {
@@ -51,6 +65,8 @@ func InitLogger(level string, logFile string) error {
 		// 同时输出到文件和控制台
 		mw := io.MultiWriter(os.Stdout, file)
 		Log.SetOutput(mw)
+	} else {
+		Log.SetOutput(os.Stdout)
 	}
 	
 	// 设置日志级别
@@ -66,6 +82,21 @@ func InitLogger(level string, logFile string) error {
 	}
 	
 	return nil
+}
+
+// EnableTerminalProgress 启用终端进度条模式 - 调用此函数后日志将不再输出到终端
+func EnableTerminalProgress() {
+	terminalProgressEnabled = true
+	// 重新初始化日志，应用设置
+	currentLevel := Log.GetLevel().String()
+	InitLogger(currentLevel, "")
+}
+
+// DisableTerminalProgress 禁用终端进度条模式 - 调用此函数后日志将恢复到终端输出
+func DisableTerminalProgress() {
+	terminalProgressEnabled = false
+	// 将输出恢复到标准输出
+	Log.SetOutput(os.Stdout)
 }
 
 // Debug 输出调试日志
