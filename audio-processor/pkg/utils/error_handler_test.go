@@ -100,8 +100,9 @@ func TestSafeExecute(t *testing.T) {
 	
 	// 验证错误统计
 	stats := handler.GetErrorStats()
-	assert.Equal(t, 1, stats["test_safe_fail"]["预期错误"])
-}
+	assert.Equal(t, 1, len(stats)) // 只应该有一个操作产生错误：test_safe_fail
+	assert.Equal(t, 1, stats["test_safe_fail"]["预期错误"]) // 错误应该统计了一次
+	}
 
 func TestErrorStats(t *testing.T) {
 	// 初始化日志

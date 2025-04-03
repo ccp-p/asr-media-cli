@@ -27,18 +27,19 @@ type MediaInfo struct {
 
 // MediaProcessor 媒体处理器
 type MediaProcessor struct {
-	mediaDir     string              // 媒体文件目录
+	MediaDir     string              // 媒体文件目录
 	OutputDir     string              // 输出目录
 	ProcessedInfo map[string]struct{} // 已处理文件记录
 }
 
 // NewMediaProcessor 创建新的媒体处理器
-func NewMediaProcessor(outputDir string) *MediaProcessor {
+func NewMediaProcessor(mediaDir , outputDir string) *MediaProcessor {
 	// 确保目录存在
 	os.MkdirAll(outputDir, 0755)
 	
 	return &MediaProcessor{
 		OutputDir:     outputDir,
+		MediaDir:     mediaDir,
 		ProcessedInfo: make(map[string]struct{}),
 	}
 }
@@ -145,7 +146,7 @@ func (p *MediaProcessor) ProcessFile(filePath string) (string, error) {
 func (p *MediaProcessor) ExtractAudioFromVideo(videoPath string) (string, error) {
 	// 创建输出文件路径
 	baseName := strings.TrimSuffix(filepath.Base(videoPath), filepath.Ext(videoPath))
-	audioPath := filepath.Join(p.OutputDir, baseName+".mp3")
+	audioPath := filepath.Join(p.MediaDir, baseName+".mp3")
 	
 	// 调用ffmpeg提取音频
 	cmd := exec.Command(

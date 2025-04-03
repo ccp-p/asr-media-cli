@@ -48,7 +48,7 @@ func main() {
 	}
 	
 	// 创建处理器
-	mediaProc := processor.NewMediaProcessor(config.OutputFolder)
+	mediaProc := processor.NewMediaProcessor(config.MediaFolder,config.OutputFolder)
 	
 	// 扫描媒体文件
 	mediaScanner := scanner.NewMediaScanner()
@@ -136,7 +136,7 @@ func checkDependencies() bool {
 	fmt.Print("检查系统依赖... ")
 	
 	// 检查ffmpeg
-	cmd := processor.NewMediaProcessor("")
+	cmd := processor.NewMediaProcessor("","")
 	if !cmd.CheckFFmpeg() {
 		color.Red("失败")
 		logrus.Error("未检测到FFmpeg，请确保FFmpeg已安装并添加到系统路径")

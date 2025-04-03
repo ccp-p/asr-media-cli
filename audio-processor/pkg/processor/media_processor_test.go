@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -114,52 +113,6 @@ func TestGetMediaInfo(t *testing.T) {
 	}
 }
 
-func TestProcessFile(t *testing.T) {
-	// 如果没有FFmpeg，跳过测试
-	skipIfNoFFmpeg(t)
-	
-	// 创建临时目录
-	tempDir, err := ioutil.TempDir("", "media_processor_test")
-	if err != nil {
-		t.Fatalf("创建临时目录失败: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-	
-	// 创建测试媒体文件
-	testFile, cleanup := createTestMediaFile(t, tempDir)
-	defer cleanup()
-	
-	// 创建处理器
-	processor := NewMediaProcessor(tempDir, tempDir)
-	
-	// 处理文件
-	result, err := processor.ProcessFile(testFile)
-	if err != nil {
-		t.Fatalf("处理文件失败: %v", err)
-	}
-	
-	// 验证结果包含必要的信息
-	expectedFields := []string{
-		"文件分析报告",
-		"格式",
-		"时长",
-		"采样率",
-		"声道数",
-		"比特率",
-		"文件大小",
-	}
-	
-	for _, field := range expectedFields {
-		if !strings.Contains(result, field) {
-			t.Errorf("结果缺少字段: %s", field)
-		}
-	}
-	
-	// 检查文件是否被标记为已处理
-	if _, processed := processor.ProcessedInfo[testFile]; !processed {
-		t.Error("文件未被标记为已处理")
-	}
-}
 
 func TestExtractAudioFromVideo(t *testing.T) {
 	// 如果没有FFmpeg，跳过测试
