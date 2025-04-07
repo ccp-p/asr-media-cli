@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/models"
 	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/utils"
 )
 
@@ -65,7 +66,7 @@ func (b *BaseASR) GetCacheKey(prefix string) string {
 }
 
 // LoadFromCache 从缓存加载识别结果
-func (b *BaseASR) LoadFromCache(cacheDir, cacheKey string) ([]DataSegment, bool) {
+func (b *BaseASR) LoadFromCache(cacheDir, cacheKey string) ([]models.DataSegment, bool) {
 	if !b.UseCache {
 		return nil, false
 	}
@@ -83,7 +84,7 @@ func (b *BaseASR) LoadFromCache(cacheDir, cacheKey string) ([]DataSegment, bool)
 }
 
 // SaveToCache 保存识别结果到缓存
-func (b *BaseASR) SaveToCache(cacheDir, cacheKey string, segments []DataSegment) error {
+func (b *BaseASR) SaveToCache(cacheDir, cacheKey string, segments []models.DataSegment) error {
 	if !b.UseCache {
 		return nil
 	}

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/models"
 	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/utils"
 )
 
@@ -185,19 +186,19 @@ func (s *ASRSelector) GetStats() map[string]map[string]interface{} {
 	return result
 }
 
-// RunWithService 使用指定服务或自动选择服务来执行ASR任务
-func (s *ASRSelector) RunWithService(ctx context.Context, audioPath string, serviceName string, useCache bool, callback ProgressCallback) ([]DataSegment, string, error) {
+// RunWithService 使用指定服务或自动选择服务来执行ASR任务，并处理结果
+func (s *ASRSelector) RunWithService(ctx context.Context, audioPath string, serviceName string, useCache bool, config *models.Config, callback ProgressCallback) ([]models.DataSegment, string, map[string]string, error) {
 	var service ASRService
 	var err error
 	var selectedName string
 	var creator ServiceCreator
 	var ok bool
-
+	
 	if serviceName == "auto" {
 		// 自动选择服务
 		selectedName, creator, ok = s.SelectService("weighted_random")
 		if !ok {
-			return nil, "", fmt.Errorf("没有可用的ASR服务")
+			return nil, "", nil, fmt.Errorf("没有可用的ASR服务")
 		}
 	} else {
 		// 使用指定的服务
@@ -206,7 +207,7 @@ func (s *ASRSelector) RunWithService(ctx context.Context, audioPath string, serv
 		s.mu.RUnlock()
 		
 		if !ok {
-			return nil, "", fmt.Errorf("未知的ASR服务: %s", serviceName)
+			return nil, "", nil, fmt.Errorf("未知的ASR服务: %s", serviceName)
 		}
 		selectedName = serviceName
 	}
@@ -214,7 +215,7 @@ func (s *ASRSelector) RunWithService(ctx context.Context, audioPath string, serv
 	// 创建服务实例
 	service, err = creator(audioPath, useCache)
 	if err != nil {
-		return nil, selectedName, fmt.Errorf("创建ASR服务失败: %w", err)
+		return nil, selectedName, nil, fmt.Errorf("创建ASR服务失败: %w", err)
 	}
 
 	// 执行识别
@@ -223,5 +224,16 @@ func (s *ASRSelector) RunWithService(ctx context.Context, audioPath string, serv
 	// 报告结果
 	s.ReportResult(selectedName, err == nil && len(segments) > 0)
 	
-	return segments, selectedName, err
+	// 处理识别结果
+	var outputFiles map[string]string
+	if err == nil && len(segments) > 0 && config != nil {
+		// 初始化ASR处理器
+		processor := NewASRProcessor(config)
+		outputFiles, err = processor.ProcessResults(ctx, segments, audioPath, nil)
+		if err != nil {
+			utils.Log.Warnf("处理ASR结果失败: %v", err)
+		}
+	}
+	
+	return segments, selectedName, outputFiles, err
 }

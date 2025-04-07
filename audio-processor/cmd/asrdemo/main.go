@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/asr"
+	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/models"
 	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/utils"
 )
 
@@ -18,6 +19,7 @@ func main() {
 	useCache := flag.Bool("cache", true, "是否使用缓存")
 	logLevel := flag.String("log-level", utils.LogLevelNormal, "日志级别")
 	logFile := flag.String("log-file", "", "日志文件路径")
+	exportSRT := flag.Bool("export-srt", true, "是否导出SRT字幕文件")
 	
 	flag.Parse()
 	
@@ -40,12 +42,12 @@ func main() {
 	selector := asr.NewASRSelector()
 	
 	// 注册服务
-	selector.RegisterService("kuaishou",func(audioPath string, useCache bool) (asr.ASRService, error) {
-        // 调用原始函数，它返回 *KuaiShouASR
-        service, err := asr.NewKuaiShouASR(audioPath, useCache)
-        // 返回时，Go 会自动将 *KuaiShouASR 转换为 ASRService 接口
-        return service, err
-    },  10)
+	selector.RegisterService("kuaishou", func(audioPath string, useCache bool) (asr.ASRService, error) {
+		// 调用原始函数，它返回 *KuaiShouASR
+		service, err := asr.NewKuaiShouASR(audioPath, useCache)
+		// 返回时，Go 会自动将 *KuaiShouASR 转换为 ASRService 接口
+		return service, err
+	}, 10)
 	// TODO: 注册更多ASR服务
 	
 	utils.Log.Info("开始识别音频文件...")
@@ -55,15 +57,34 @@ func main() {
 		utils.Log.Infof("进度 [%d%%] %s", percent, message)
 	}
 	
+	// 创建配置
+	config := &models.Config{
+		OutputFolder:      "./output",
+		ExportSRT:         *exportSRT,  // 使用命令行参数
+		FormatText:        true,
+		IncludeTimestamps: true,
+	}
+	
+	// 确保输出目录存在
+	os.MkdirAll(config.OutputFolder, 0755)
+	
 	// 执行识别
 	start := time.Now()
-	segments, serviceName, err := selector.RunWithService(ctx, *audioPath, *service, *useCache, progressCallback)
+	segments, serviceName, outputFiles, err := selector.RunWithService(ctx, *audioPath, *service, *useCache, config, progressCallback)
 	if err != nil {
 		utils.Log.Fatalf("识别失败: %v", err)
 	}
 	
 	duration := time.Since(start)
 	utils.Log.Infof("使用 %s 服务识别完成，耗时 %.2f 秒", serviceName, duration.Seconds())
+	
+	// 输出结果文件信息
+	if len(outputFiles) > 0 {
+		utils.Log.Info("生成的文件:")
+		for fileType, filePath := range outputFiles {
+			utils.Log.Infof("- %s: %s", fileType, filePath)
+		}
+	}
 	
 	// 输出结果
 	if len(segments) == 0 {

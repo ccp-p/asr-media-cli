@@ -266,6 +266,10 @@ func loadConfig() *models.Config {
 			logrus.Warnf("配置加载失败: %v，将使用默认配置", err)
 		} else {
 			color.Green("成功")
+			// 打印是否启用SRT导出
+			if config.ExportSRT {
+				logrus.Info("已启用SRT字幕导出功能")
+			}
 		}
 	} else {
 		color.Yellow("未指定配置文件，使用默认配置")

@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 
+	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/models"
 	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/utils"
 )
 
@@ -41,7 +42,7 @@ type KuaiShouResponse struct {
 }
 
 // GetResult 实现ASRService接口
-func (k *KuaiShouASR) GetResult(ctx context.Context, callback ProgressCallback) ([]DataSegment, error) {
+func (k *KuaiShouASR) GetResult(ctx context.Context, callback ProgressCallback) ([]models.DataSegment, error) {
 	// 检查是否有缓存
 	cacheKey := k.GetCacheKey("KuaiShouASR")
 	if k.UseCache {
@@ -141,13 +142,13 @@ func (k *KuaiShouASR) submit(ctx context.Context) (*KuaiShouResponse, error) {
 }
 
 // makeSegments 处理识别结果
-func (k *KuaiShouASR) makeSegments(resp *KuaiShouResponse) []DataSegment {
-	var segments []DataSegment
+func (k *KuaiShouASR) makeSegments(resp *KuaiShouResponse) []models.DataSegment {
+	var segments []models.DataSegment
 
 	// 安全处理响应
 	if resp != nil && resp.Data.Text != nil {
 		for _, item := range resp.Data.Text {
-			segments = append(segments, DataSegment{
+			segments = append(segments, models.DataSegment{
 				Text:      item.Text,
 				StartTime: item.StartTime,
 				EndTime:   item.EndTime,
