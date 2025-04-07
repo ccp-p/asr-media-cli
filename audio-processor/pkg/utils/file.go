@@ -1,10 +1,10 @@
 package utils
 
 import (
-    "encoding/json"
-    "fmt"
-    "os"
-    "path/filepath"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 )
 
 // LoadJSONFile 加载JSON文件，处理异常
@@ -75,4 +75,39 @@ func EnsureDirExists(dirPath string) error {
     }
     
     return nil
+}
+
+// GetStringValue 从map中获取字符串值，如果不存在或类型不匹配则返回默认值
+func GetStringValue(m map[string]interface{}, key string, defaultVal string) string {
+    if val, ok := m[key]; ok {
+        if str, ok := val.(string); ok {
+            return str
+        }
+    }
+    return defaultVal
+}
+
+// GetBoolValue 从map中获取布尔值，如果不存在或类型不匹配则返回默认值
+func GetBoolValue(m map[string]interface{}, key string, defaultVal bool) bool {
+    if val, ok := m[key]; ok {
+        if b, ok := val.(bool); ok {
+            return b
+        }
+    }
+    return defaultVal
+}
+
+// GetFloat64Value 从map中获取浮点值，如果不存在或类型不匹配则返回默认值
+func GetFloat64Value(m map[string]interface{}, key string, defaultVal float64) float64 {
+    if val, ok := m[key]; ok {
+        switch v := val.(type) {
+        case float64:
+            return v
+        case int:
+            return float64(v)
+        case int64:
+            return float64(v)
+        }
+    }
+    return defaultVal
 }

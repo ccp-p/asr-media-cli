@@ -27,24 +27,45 @@ type BatchResult struct {
 // BatchProgressCallback 批处理进度回调
 type BatchProgressCallback func(current, total int, filename string, result *BatchResult)
 
+// ProcessedRecord 表示已处理文件的记录
+type ProcessedRecord struct {
+	LastProcessedTime string            `json:"last_processed_time"`
+	Completed         bool              `json:"completed"`
+	Filename          string            `json:"filename"`
+	TotalDuration     float64           `json:"total_duration"`
+	TotalParts        int               `json:"total_parts,omitempty"`
+	Parts             map[string]Part   `json:"parts,omitempty"`
+}
+
+// Part 表示文件处理的一部分
+type Part struct {
+	Completed      bool   `json:"completed"`
+	OutputFile     string `json:"output_file"`
+	CompletedTime  string `json:"completed_time"`
+}
+
 // BatchProcessor 批量处理器
 type BatchProcessor struct {
-	MediaDir        string
-	OutputDir       string
-	TempDir         string
-	MaxConcurrency  int
-	VideoExtensions []string
-	Extractor       *AudioExtractor
-	ProgressCallback BatchProgressCallback
-	config 	   *models.Config
-	ProgressManager *ui.ProgressManager
-	ASRSelector	*asr.ASRSelector
-	ctx context.Context
+	MediaDir           string
+	OutputDir          string
+	TempDir            string
+	MaxConcurrency     int
+	VideoExtensions    []string
+	Extractor          *AudioExtractor
+	ProgressCallback   BatchProgressCallback
+	config             *models.Config
+	ProgressManager    *ui.ProgressManager
+	ASRSelector        *asr.ASRSelector
+	ctx                context.Context
+	processedRecordFile string
+	processedRecords    map[string]ProcessedRecord
 }
+
 // SetASRSelector
 func (p *BatchProcessor) SetASRSelector(selector *asr.ASRSelector) {
 	p.ASRSelector = selector
 }
+
 // SetContext 设置上下文
 func (p *BatchProcessor) SetContext(ctx context.Context) {
 	p.ctx = ctx
@@ -59,16 +80,82 @@ func NewBatchProcessor(mediaDir, outputDir, tempDir string, callback BatchProgre
 	tempSegmentsDir := filepath.Join(tempDir, "segments")
 	os.MkdirAll(tempSegmentsDir, 0755)
 
-	return &BatchProcessor{
-		MediaDir:       mediaDir,
-		OutputDir:      outputDir,
-		TempDir:        tempDir,
-		MaxConcurrency: 4, // 默认并发数
-		VideoExtensions: []string{".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv"},
-		Extractor:      NewAudioExtractor(tempSegmentsDir, nil, config),
-		config: config,
-		ProgressCallback: callback,
+	processor := &BatchProcessor{
+		MediaDir:           mediaDir,
+		OutputDir:          outputDir,
+		TempDir:            tempDir,
+		MaxConcurrency:     4, // 默认并发数
+		VideoExtensions:    []string{".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv"},
+		Extractor:          NewAudioExtractor(tempSegmentsDir, nil, config),
+		config:             config,
+		ProgressCallback:   callback,
+		processedRecordFile: filepath.Join(outputDir, "processed_records.json"),
+		processedRecords:    make(map[string]ProcessedRecord),
 	}
+
+	// 加载处理记录
+	processor.loadProcessedRecords()
+
+	return processor
+}
+
+// loadProcessedRecords 从文件加载处理记录
+func (p *BatchProcessor) loadProcessedRecords() {
+	data, err := utils.LoadJSONFile(p.processedRecordFile, make(map[string]ProcessedRecord))
+	if err != nil {
+		logrus.Warnf("加载处理记录失败: %v, 将使用空记录", err)
+		p.processedRecords = make(map[string]ProcessedRecord)
+		return
+	}
+
+	if records, ok := data.(map[string]interface{}); ok {
+		// 解析记录
+		for path, record := range records {
+			if recordMap, ok := record.(map[string]interface{}); ok {
+				processed := ProcessedRecord{
+					Filename:      utils.GetStringValue(recordMap, "filename", filepath.Base(path)),
+					Completed:     utils.GetBoolValue(recordMap, "completed", false),
+					TotalDuration: utils.GetFloat64Value(recordMap, "total_duration", 0),
+					TotalParts:    int(utils.GetFloat64Value(recordMap, "total_parts", 0)),
+				}
+
+				// 解析时间
+				processed.LastProcessedTime = utils.GetStringValue(recordMap, "last_processed_time", "")
+
+				// 解析parts
+				if partsData, ok := recordMap["parts"].(map[string]interface{}); ok {
+					processed.Parts = make(map[string]Part)
+					for partKey, partData := range partsData {
+						if partMap, ok := partData.(map[string]interface{}); ok {
+							part := Part{
+								Completed:     utils.GetBoolValue(partMap, "completed", false),
+								OutputFile:    utils.GetStringValue(partMap, "output_file", ""),
+								CompletedTime: utils.GetStringValue(partMap, "completed_time", ""),
+							}
+							processed.Parts[partKey] = part
+						}
+					}
+				}
+
+				p.processedRecords[path] = processed
+			}
+		}
+	} else {
+		logrus.Warnf("处理记录格式错误，将使用空记录")
+		p.processedRecords = make(map[string]ProcessedRecord)
+	}
+
+	logrus.Infof("已加载处理记录: %d 个文件", len(p.processedRecords))
+}
+
+// saveProcessedRecords 保存处理记录到文件
+func (p *BatchProcessor) saveProcessedRecords() error {
+	err := utils.SaveJSONFile(p.processedRecordFile, p.processedRecords)
+	if err != nil {
+		logrus.Errorf("保存处理记录失败: %v", err)
+		return fmt.Errorf("保存处理记录失败: %w", err)
+	}
+	return nil
 }
 
 // SetProgressManager 设置进度管理器
@@ -153,12 +240,27 @@ func (p *BatchProcessor) ProcessVideoFiles() ([]BatchResult, error) {
 		allResults = append(allResults, result)
 	}
 
+	// 在批处理完成后，更新处理记录
+	for _, result := range allResults {
+		p.updateProcessedRecord(result.FilePath, &result)
+	}
+
+	// 保存处理记录
+	if err := p.saveProcessedRecords(); err != nil {
+		logrus.Warnf("保存处理记录失败: %v", err)
+	}
+
 	return allResults, nil
 }
 
 // ProcessSingleFile 处理单个文件
 func (p *BatchProcessor) ProcessSingleFile(filePath string) BatchResult {
-	return p.processSingleFile(filePath)
+	result := p.processSingleFile(filePath)
+
+	// 更新处理记录
+	p.updateProcessedRecord(filePath, &result)
+
+	return result
 }
 
 // IsRecognizedFile 检查文件是否已处理
@@ -167,13 +269,13 @@ func (p *BatchProcessor) IsRecognizedFile(filePath string) bool {
 	baseName := filepath.Base(filePath)
 	baseName = baseName[:len(baseName)-len(filepath.Ext(baseName))]
 
-	// 检查是否存在对应的输出文件
+	// 方法1: 检查是否存在对应的输出文件
 	outputPath := filepath.Join(p.OutputDir, baseName+".txt")
 	if _, err := os.Stat(outputPath); err == nil {
 		return true
 	}
 
-	// 检查part目录
+	// 方法2: 检查part目录
 	partDir := filepath.Join(p.OutputDir, baseName)
 	if _, err := os.Stat(partDir); err == nil {
 		// 检查是否有index.txt或part文件
@@ -189,175 +291,233 @@ func (p *BatchProcessor) IsRecognizedFile(filePath string) bool {
 		}
 	}
 
+	// 方法3: 检查处理记录
+	normalizedPath := filepath.Clean(filePath)
+	if _, exists := p.processedRecords[normalizedPath]; exists {
+		return true
+	}
+
+	// 方法4: 检查处理记录中是否有同名文件
+	fileBaseName := filepath.Base(filePath)
+	for recordPath, record := range p.processedRecords {
+		if filepath.Base(recordPath) == fileBaseName || record.Filename == fileBaseName {
+			return true
+		}
+	}
+
 	return false
 }
 
-// 处理单个文件
+// updateProcessedRecord 更新处理记录
+func (p *BatchProcessor) updateProcessedRecord(filePath string, result *BatchResult) {
+	normalizedPath := filepath.Clean(filePath)
+
+	// 获取或创建记录
+	record, exists := p.processedRecords[normalizedPath]
+	if !exists {
+		record = ProcessedRecord{
+			Filename: filepath.Base(filePath),
+		}
+	}
+
+	// 更新记录
+	record.LastProcessedTime = time.Now().Format("2006-01-02 15:04:05")
+	record.Completed = result.Success
+
+	if result.Success && result.OutputPath != "" {
+		// 可以添加更多信息，如处理时长等
+	}
+
+	// 保存回记录表
+	p.processedRecords[normalizedPath] = record
+
+	// 保存到文件
+	if err := p.saveProcessedRecords(); err != nil {
+		logrus.Warnf("保存处理记录失败: %v", err)
+	}
+}
+
+// UpdateProcessedRecordOnRename 当文件重命名时更新处理记录
+func (p *BatchProcessor) UpdateProcessedRecordOnRename(oldPath, newPath string) {
+	oldNormalized := filepath.Clean(oldPath)
+	newNormalized := filepath.Clean(newPath)
+
+	// 检查旧路径是否在记录中
+	if record, exists := p.processedRecords[oldNormalized]; exists {
+		// 删除旧记录，添加新记录
+		delete(p.processedRecords, oldNormalized)
+		p.processedRecords[newNormalized] = record
+
+		// 更新文件名
+		record.Filename = filepath.Base(newPath)
+		p.processedRecords[newNormalized] = record
+
+		// 保存更新后的记录
+		if err := p.saveProcessedRecords(); err != nil {
+			logrus.Warnf("保存处理记录失败: %v", err)
+		}
+
+		logrus.Infof("已更新处理记录: %s -> %s", oldPath, newPath)
+	}
+}
+
 // 处理单个文件 - 主控制流程
 func (p *BatchProcessor) processSingleFile(filePath string) BatchResult {
-    // 第一步：提取音频
-    result := p.extractAudioFromFile(filePath)
-    
-    // 如果音频提取成功且需要执行ASR处理
-    if result.Success && p.config != nil && p.config.ExportSRT {
-        p.performASROnAudio(&result)
-    }
-    
-    return result
+	// 第一步：提取音频
+	result := p.extractAudioFromFile(filePath)
+
+	// 如果音频提取成功且需要执行ASR处理
+	if result.Success && p.config != nil && p.config.ExportSRT {
+		p.performASROnAudio(&result)
+	}
+
+	return result
 }
 
 // performASROnAudio 对提取的音频执行ASR处理
-func (p *BatchProcessor) performASROnAudio(result *BatchResult) (error) {
-    if result == nil || !result.Success || result.OutputPath == "" {
-        return fmt.Errorf("无效的处理结果或音频路径")
-    }
-    
-    audioPath := result.OutputPath
-    filename := filepath.Base(result.FilePath)
-    fileID := filename[:len(filename)-len(filepath.Ext(filename))]
-    
-    // 更新进度条
-    if p.ProgressManager != nil {
-        p.ProgressManager.UpdateProgressBar("file_"+fileID, 85, "执行语音识别...")
-    }
-    
+func (p *BatchProcessor) performASROnAudio(result *BatchResult) error {
+	if result == nil || !result.Success || result.OutputPath == "" {
+		return fmt.Errorf("无效的处理结果或音频路径")
+	}
+
+	audioPath := result.OutputPath
+	filename := filepath.Base(result.FilePath)
+	fileID := filename[:len(filename)-len(filepath.Ext(filename))]
+
+	// 更新进度条
+	if p.ProgressManager != nil {
+		p.ProgressManager.UpdateProgressBar("file_"+fileID, 85, "执行语音识别...")
+	}
 
 	utils.Log.Infof("开始对文件进行语音识别: %s", filepath.Base(audioPath))
-    
-    // 创建进度条ID
-    barID := "asr_" + filepath.Base(audioPath)
-    p.ProgressManager.CreateProgressBar(barID, 100, "ASR识别 "+filepath.Base(audioPath), "准备中...")
-    
-    // 进度回调
-    progressCallback := func(percent int, message string) {
-        p.ProgressManager.UpdateProgressBar(barID, percent, message)
-    }
-    
-    // 创建上下文
-    ctx, cancel := context.WithTimeout(p.ctx, 10*time.Minute)
-    defer cancel()
-    
-    // 执行ASR识别
-    segments, _, outputFiles, err := p.ASRSelector.RunWithService(
-        ctx, 
-        audioPath, 
-        p.config.ASRService, 
-        false, 
+
+	// 创建进度条ID
+	barID := "asr_" + filepath.Base(audioPath)
+	p.ProgressManager.CreateProgressBar(barID, 100, "ASR识别 "+filepath.Base(audioPath), "准备中...")
+
+	// 进度回调
+	progressCallback := func(percent int, message string) {
+		p.ProgressManager.UpdateProgressBar(barID, percent, message)
+	}
+
+	// 创建上下文
+	ctx, cancel := context.WithTimeout(p.ctx, 10*time.Minute)
+	defer cancel()
+
+	// 执行ASR识别
+	segments, _, outputFiles, err := p.ASRSelector.RunWithService(
+		ctx,
+		audioPath,
+		p.config.ASRService,
+		false,
 		p.config,
-        progressCallback,
-    )
-    
-    if err != nil {
-        p.ProgressManager.CompleteProgressBar(barID, "识别失败")
-		
-        return fmt.Errorf("ASR识别失败: %w", err)
-    }
-    p.ProgressManager.CompleteProgressBar(barID, "识别完成")
+		progressCallback,
+	)
 
-   
-    
-    // 输出结果信息
-    if len(outputFiles) > 0 {
-        utils.Log.Info("生成的字幕文件:")
-        for fileType, filePath := range outputFiles {
-            utils.Log.Infof("- %s: %s", fileType, filepath.Base(filePath))
-        }
-    }
-    
-	
-    utils.Log.Infof("文件 %s 识别完成，共 %d 段文本", filepath.Base(audioPath), len(segments))
-    
-  
-    // 完成文件进度条
-    if p.ProgressManager != nil {
-        p.ProgressManager.CompleteProgressBar("file_"+fileID, "处理完成")
-    }
-    return nil
+	if err != nil {
+		p.ProgressManager.CompleteProgressBar(barID, "识别失败")
 
+		return fmt.Errorf("ASR识别失败: %w", err)
+	}
+	p.ProgressManager.CompleteProgressBar(barID, "识别完成")
+
+	// 输出结果信息
+	if len(outputFiles) > 0 {
+		utils.Log.Info("生成的字幕文件:")
+		for fileType, filePath := range outputFiles {
+			utils.Log.Infof("- %s: %s", fileType, filepath.Base(filePath))
+		}
+	}
+
+	utils.Log.Infof("文件 %s 识别完成，共 %d 段文本", filepath.Base(audioPath), len(segments))
+
+	// 完成文件进度条
+	if p.ProgressManager != nil {
+		p.ProgressManager.CompleteProgressBar("file_"+fileID, "处理完成")
+	}
+	return nil
 }
 
 // extractAudioFromFile 从文件中提取音频
 func (p *BatchProcessor) extractAudioFromFile(filePath string) BatchResult {
-    result := BatchResult{
-        FilePath: filePath,
-        Success:  false,
-    }
-    
-    filename := filepath.Base(filePath)
-    fileID := filename[:len(filename)-len(filepath.Ext(filename))]
-    
-    // 创建文件进度条
-    if p.ProgressManager != nil {
-        p.ProgressManager.CreateProgressBar("file_"+fileID, 100,
-            fmt.Sprintf("处理 %s", filename), "准备中")
-    }
-    
-    // 为每个文件单独设置进度回调
-    segmentCallback := func(current, total int, message string) {
-        logrus.Infof("[%s] 进度: %d/%d - %s", filename, current, total, message)
-    }
-    
-    // 设置提取器的回调
-    p.Extractor.ProgressCallback = segmentCallback
-    
-    // 检查文件类型
-    ext := filepath.Ext(filePath)
-    isVideo := false
-    for _, videoExt := range p.VideoExtensions {
-        if videoExt == ext {
-            isVideo = true
-            break
-        }
-    }
-    
-    var audioPath string
-    var err error
-    
-    // 根据文件类型处理
-    if isVideo {
-        // 从视频提取音频
-        if p.ProgressManager != nil {
-            p.ProgressManager.UpdateProgressBar("file_"+fileID, 20, "提取音频中")
-        }
-        
-        audioPath, _, err = p.Extractor.ExtractAudioFromVideo(filePath, p.OutputDir)
-        if err != nil {
-            if p.ProgressManager != nil {
-                p.ProgressManager.CompleteProgressBar("file_"+fileID, fmt.Sprintf("失败: %v", err))
-            }
-            
-            result.Error = fmt.Errorf("从视频提取音频失败: %w", err)
-            return result
-        }
-        
-        if p.ProgressManager != nil {
-            p.ProgressManager.UpdateProgressBar("file_"+fileID, 80, "音频提取完成")
-        }
-    } else if ext == ".mp3" || ext == ".wav" {
-        // 直接使用音频文件
-        audioPath = filePath
-        
-        if p.ProgressManager != nil {
-            p.ProgressManager.UpdateProgressBar("file_"+fileID, 50, "处理音频文件")
-        }
-    } else {
-        if p.ProgressManager != nil {
-            p.ProgressManager.CompleteProgressBar("file_"+fileID, fmt.Sprintf("不支持的格式: %s", ext))
-        }
-        
-        result.Error = fmt.Errorf("不支持的文件格式: %s", ext)
-        return result
-    }
-    
-    // 输出路径
-    result.OutputPath = audioPath
-    result.Success = true
-    
-    // 注意：不在这里完成进度条，因为可能还有ASR处理
-    return result
+	result := BatchResult{
+		FilePath: filePath,
+		Success:  false,
+	}
+
+	filename := filepath.Base(filePath)
+	fileID := filename[:len(filename)-len(filepath.Ext(filename))]
+
+	// 创建文件进度条
+	if p.ProgressManager != nil {
+		p.ProgressManager.CreateProgressBar("file_"+fileID, 100,
+			fmt.Sprintf("处理 %s", filename), "准备中")
+	}
+
+	// 为每个文件单独设置进度回调
+	segmentCallback := func(current, total int, message string) {
+		logrus.Infof("[%s] 进度: %d/%d - %s", filename, current, total, message)
+	}
+
+	// 设置提取器的回调
+	p.Extractor.ProgressCallback = segmentCallback
+
+	// 检查文件类型
+	ext := filepath.Ext(filePath)
+	isVideo := false
+	for _, videoExt := range p.VideoExtensions {
+		if videoExt == ext {
+			isVideo = true
+			break
+		}
+	}
+
+	var audioPath string
+	var err error
+
+	// 根据文件类型处理
+	if isVideo {
+		// 从视频提取音频
+		if p.ProgressManager != nil {
+			p.ProgressManager.UpdateProgressBar("file_"+fileID, 20, "提取音频中")
+		}
+
+		audioPath, _, err = p.Extractor.ExtractAudioFromVideo(filePath, p.OutputDir)
+		if err != nil {
+			if p.ProgressManager != nil {
+				p.ProgressManager.CompleteProgressBar("file_"+fileID, fmt.Sprintf("失败: %v", err))
+			}
+
+			result.Error = fmt.Errorf("从视频提取音频失败: %w", err)
+			return result
+		}
+
+		if p.ProgressManager != nil {
+			p.ProgressManager.UpdateProgressBar("file_"+fileID, 80, "音频提取完成")
+		}
+	} else if ext == ".mp3" || ext == ".wav" {
+		// 直接使用音频文件
+		audioPath = filePath
+
+		if p.ProgressManager != nil {
+			p.ProgressManager.UpdateProgressBar("file_"+fileID, 50, "处理音频文件")
+		}
+	} else {
+		if p.ProgressManager != nil {
+			p.ProgressManager.CompleteProgressBar("file_"+fileID, fmt.Sprintf("不支持的格式: %s", ext))
+		}
+
+		result.Error = fmt.Errorf("不支持的文件格式: %s", ext)
+		return result
+	}
+
+	// 输出路径
+	result.OutputPath = audioPath
+	result.Success = true
+
+	// 注意：不在这里完成进度条，因为可能还有ASR处理
+	return result
 }
-
-
 
 // 扫描媒体目录
 func (p *BatchProcessor) scanMediaDirectory() ([]string, error) {

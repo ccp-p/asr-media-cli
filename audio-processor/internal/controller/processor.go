@@ -157,8 +157,11 @@ func (pc *ProcessorController) StartWatchMode() error {
     os.MkdirAll(pc.Config.OutputFolder, 0755)
     os.MkdirAll(pc.Config.MediaFolder, 0755)
     
-    // 创建处理器适配器
+    // 创建处理器适配器，并添加文件重命名处理
     processorAdapter := adapters.NewBatchProcessorAdapter(pc.BatchProcessor)
+    processorAdapter.SetRenameHandler(func(oldPath, newPath string) {
+        pc.BatchProcessor.UpdateProcessedRecordOnRename(oldPath, newPath)
+    })
     
     // 监控下载目录
     stopDownloadMonitor, err := watcher.StartFolderMonitoring(
