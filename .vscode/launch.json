@@ -3,6 +3,17 @@
     "configurations": [
         // go
         {
+            "name": "Go: Current",
+              "type": "go",
+              "request": "launch",
+              "mode": "auto",
+              "program": "${fileDirname}",
+              "env": {
+                  "GO_ENV": "development"
+              },
+              "console": "integratedTerminal",
+          },
+        {
           "name": "Go: Launch",
             "type": "go",
             "request": "launch",
