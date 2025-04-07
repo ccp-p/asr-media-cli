@@ -42,12 +42,16 @@ func main() {
 	selector := asr.NewASRSelector()
 	
 	// 注册服务
-	selector.RegisterService("kuaishou", func(audioPath string, useCache bool) (asr.ASRService, error) {
-		// 调用原始函数，它返回 *KuaiShouASR
-		service, err := asr.NewKuaiShouASR(audioPath, useCache)
-		// 返回时，Go 会自动将 *KuaiShouASR 转换为 ASRService 接口
+	// selector.RegisterService("kuaishou", func(audioPath string, useCache bool) (asr.ASRService, error) {
+	// 	// 调用原始函数，它返回 *KuaiShouASR
+	// 	service, err := asr.NewKuaiShouASR(audioPath, useCache)
+	// 	// 返回时，Go 会自动将 *KuaiShouASR 转换为 ASRService 接口
+	// 	return service, err
+	// }, 10)
+	selector.RegisterService("bcut", func(audioPath string, useCache bool) (asr.ASRService, error) {
+		service, err := asr.NewBcutASR(audioPath, useCache)
 		return service, err
-	}, 10)
+	},30)
 	// TODO: 注册更多ASR服务
 	
 	utils.Log.Info("开始识别音频文件...")
