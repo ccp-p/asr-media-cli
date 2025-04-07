@@ -73,21 +73,28 @@ func (pm *ProgressManager) UpdateProgressBar(id string, progress int, message st
 }
 
 // CompleteProgressBar 完成进度条
+// CompleteProgressBar 完成进度条
 func (pm *ProgressManager) CompleteProgressBar(id string, suffix string) {
-	if !pm.enabled {
-		return
-	}
+    if !pm.enabled {
+        return
+    }
 
-	pm.mutex.Lock()
-	bar, exists := pm.progressBars[id]
-	pm.mutex.Unlock()
+    pm.mutex.Lock()
+    bar, exists := pm.progressBars[id]
+    pm.mutex.Unlock()
 
-	if exists {
-		bar.Complete(suffix)
+    if exists && bar != nil { // 添加非空检查
+        // 安全设置进度为100%
+        if bar.Total <= 0 {
+            bar.Total = 100
+        }
+        bar.Current = bar.Total
+        
+        bar.Complete(suffix)
 
-		// 完成后移除进度条
-		pm.RemoveProgressBar(id)
-	}
+        // 完成后移除进度条
+        pm.RemoveProgressBar(id)
+    }
 }
 
 // RemoveProgressBar 移除进度条

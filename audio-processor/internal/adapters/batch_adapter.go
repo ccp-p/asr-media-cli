@@ -15,6 +15,7 @@ type BatchProcessorAdapter struct {
 	Processor *audio.BatchProcessor
 }
 
+
 // ProcessFile 处理文件
 func (a *BatchProcessorAdapter) ProcessFile(filePath string) bool {
 	result := a.Processor.ProcessSingleFile(filePath)

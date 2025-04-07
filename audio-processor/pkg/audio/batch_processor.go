@@ -1,6 +1,7 @@
 package audio
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,7 +9,9 @@ import (
 	"time"
 
 	"github.com/ccp-p/asr-media-cli/audio-processor/internal/ui"
+	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/asr"
 	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/models"
+	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/utils"
 	"github.com/sirupsen/logrus"
 )
 
@@ -33,7 +36,18 @@ type BatchProcessor struct {
 	VideoExtensions []string
 	Extractor       *AudioExtractor
 	ProgressCallback BatchProgressCallback
+	config 	   *models.Config
 	ProgressManager *ui.ProgressManager
+	ASRSelector	*asr.ASRSelector
+	ctx context.Context
+}
+// SetASRSelector
+func (p *BatchProcessor) SetASRSelector(selector *asr.ASRSelector) {
+	p.ASRSelector = selector
+}
+// SetContext 设置上下文
+func (p *BatchProcessor) SetContext(ctx context.Context) {
+	p.ctx = ctx
 }
 
 // NewBatchProcessor 创建批处理器
@@ -52,6 +66,7 @@ func NewBatchProcessor(mediaDir, outputDir, tempDir string, callback BatchProgre
 		MaxConcurrency: 4, // 默认并发数
 		VideoExtensions: []string{".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv"},
 		Extractor:      NewAudioExtractor(tempSegmentsDir, nil, config),
+		config: config,
 		ProgressCallback: callback,
 	}
 }
@@ -178,92 +193,171 @@ func (p *BatchProcessor) IsRecognizedFile(filePath string) bool {
 }
 
 // 处理单个文件
+// 处理单个文件 - 主控制流程
 func (p *BatchProcessor) processSingleFile(filePath string) BatchResult {
-	result := BatchResult{
-		FilePath: filePath,
-		Success:  false,
-	}
-
-	filename := filepath.Base(filePath)
-	fileID := filename[:len(filename)-len(filepath.Ext(filename))]
-
-	// 创建文件进度条
-	if p.ProgressManager != nil {
-		p.ProgressManager.CreateProgressBar("file_"+fileID, 100,
-			fmt.Sprintf("处理 %s", filename), "准备中")
-	}
-
-	// 为每个文件单独设置进度回调
-	segmentCallback := func(current, total int, message string) {
-		// 这里可以对文件进度进行额外处理
-		logrus.Infof("[%s] 进度: %d/%d - %s", filename, current, total, message)
-	}
-
-	// 设置提取器的回调
-	p.Extractor.ProgressCallback = segmentCallback
-
-	// 检查文件类型
-	ext := filepath.Ext(filePath)
-	isVideo := false
-	for _, videoExt := range p.VideoExtensions {
-		if videoExt == ext {
-			isVideo = true
-			break
-		}
-	}
-
-	var audioPath string
-	var err error
-
-	// 根据文件类型处理
-	if isVideo {
-		// 从视频提取音频
-		if p.ProgressManager != nil {
-			p.ProgressManager.UpdateProgressBar("file_"+fileID, 20, "提取音频中")
-		}
-
-		audioPath, _, err = p.Extractor.ExtractAudioFromVideo(filePath, p.OutputDir)
-		if err != nil {
-			if p.ProgressManager != nil {
-				p.ProgressManager.CompleteProgressBar("file_"+fileID, fmt.Sprintf("失败: %v", err))
-			}
-
-			result.Error = fmt.Errorf("从视频提取音频失败: %w", err)
-			return result
-		}
-
-		if p.ProgressManager != nil {
-			p.ProgressManager.UpdateProgressBar("file_"+fileID, 80, "音频提取完成")
-		}
-
-	} else if ext == ".mp3" || ext == ".wav" {
-		// 直接使用音频文件
-		audioPath = filePath
-
-		if p.ProgressManager != nil {
-			p.ProgressManager.UpdateProgressBar("file_"+fileID, 50, "处理音频文件")
-		}
-
-	} else {
-		if p.ProgressManager != nil {
-			p.ProgressManager.CompleteProgressBar("file_"+fileID, fmt.Sprintf("不支持的格式: %s", ext))
-		}
-
-		result.Error = fmt.Errorf("不支持的文件格式: %s", ext)
-		return result
-	}
-
-	// 输出路径
-	result.OutputPath = audioPath
-	result.Success = true
-
-	// 完成文件进度条
-	if p.ProgressManager != nil {
-		p.ProgressManager.CompleteProgressBar("file_"+fileID, "处理完成")
-	}
-
-	return result
+    // 第一步：提取音频
+    result := p.extractAudioFromFile(filePath)
+    
+    // 如果音频提取成功且需要执行ASR处理
+    if result.Success && p.config != nil && p.config.ExportSRT {
+        p.performASROnAudio(&result)
+    }
+    
+    return result
 }
+
+// performASROnAudio 对提取的音频执行ASR处理
+func (p *BatchProcessor) performASROnAudio(result *BatchResult) (error) {
+    if result == nil || !result.Success || result.OutputPath == "" {
+        return fmt.Errorf("无效的处理结果或音频路径")
+    }
+    
+    audioPath := result.OutputPath
+    filename := filepath.Base(result.FilePath)
+    fileID := filename[:len(filename)-len(filepath.Ext(filename))]
+    
+    // 更新进度条
+    if p.ProgressManager != nil {
+        p.ProgressManager.UpdateProgressBar("file_"+fileID, 85, "执行语音识别...")
+    }
+    
+
+	utils.Log.Infof("开始对文件进行语音识别: %s", filepath.Base(audioPath))
+    
+    // 创建进度条ID
+    barID := "asr_" + filepath.Base(audioPath)
+    p.ProgressManager.CreateProgressBar(barID, 100, "ASR识别 "+filepath.Base(audioPath), "准备中...")
+    
+    // 进度回调
+    progressCallback := func(percent int, message string) {
+        p.ProgressManager.UpdateProgressBar(barID, percent, message)
+    }
+    
+    // 创建上下文
+    ctx, cancel := context.WithTimeout(p.ctx, 10*time.Minute)
+    defer cancel()
+    
+    // 执行ASR识别
+    segments, _, outputFiles, err := p.ASRSelector.RunWithService(
+        ctx, 
+        audioPath, 
+        p.config.ASRService, 
+        false, 
+		p.config,
+        progressCallback,
+    )
+    
+    if err != nil {
+        p.ProgressManager.CompleteProgressBar(barID, "识别失败")
+		
+        return fmt.Errorf("ASR识别失败: %w", err)
+    }
+    p.ProgressManager.CompleteProgressBar(barID, "识别完成")
+
+   
+    
+    // 输出结果信息
+    if len(outputFiles) > 0 {
+        utils.Log.Info("生成的字幕文件:")
+        for fileType, filePath := range outputFiles {
+            utils.Log.Infof("- %s: %s", fileType, filepath.Base(filePath))
+        }
+    }
+    
+	
+    utils.Log.Infof("文件 %s 识别完成，共 %d 段文本", filepath.Base(audioPath), len(segments))
+    
+  
+    // 完成文件进度条
+    if p.ProgressManager != nil {
+        p.ProgressManager.CompleteProgressBar("file_"+fileID, "处理完成")
+    }
+    return nil
+
+}
+
+// extractAudioFromFile 从文件中提取音频
+func (p *BatchProcessor) extractAudioFromFile(filePath string) BatchResult {
+    result := BatchResult{
+        FilePath: filePath,
+        Success:  false,
+    }
+    
+    filename := filepath.Base(filePath)
+    fileID := filename[:len(filename)-len(filepath.Ext(filename))]
+    
+    // 创建文件进度条
+    if p.ProgressManager != nil {
+        p.ProgressManager.CreateProgressBar("file_"+fileID, 100,
+            fmt.Sprintf("处理 %s", filename), "准备中")
+    }
+    
+    // 为每个文件单独设置进度回调
+    segmentCallback := func(current, total int, message string) {
+        logrus.Infof("[%s] 进度: %d/%d - %s", filename, current, total, message)
+    }
+    
+    // 设置提取器的回调
+    p.Extractor.ProgressCallback = segmentCallback
+    
+    // 检查文件类型
+    ext := filepath.Ext(filePath)
+    isVideo := false
+    for _, videoExt := range p.VideoExtensions {
+        if videoExt == ext {
+            isVideo = true
+            break
+        }
+    }
+    
+    var audioPath string
+    var err error
+    
+    // 根据文件类型处理
+    if isVideo {
+        // 从视频提取音频
+        if p.ProgressManager != nil {
+            p.ProgressManager.UpdateProgressBar("file_"+fileID, 20, "提取音频中")
+        }
+        
+        audioPath, _, err = p.Extractor.ExtractAudioFromVideo(filePath, p.OutputDir)
+        if err != nil {
+            if p.ProgressManager != nil {
+                p.ProgressManager.CompleteProgressBar("file_"+fileID, fmt.Sprintf("失败: %v", err))
+            }
+            
+            result.Error = fmt.Errorf("从视频提取音频失败: %w", err)
+            return result
+        }
+        
+        if p.ProgressManager != nil {
+            p.ProgressManager.UpdateProgressBar("file_"+fileID, 80, "音频提取完成")
+        }
+    } else if ext == ".mp3" || ext == ".wav" {
+        // 直接使用音频文件
+        audioPath = filePath
+        
+        if p.ProgressManager != nil {
+            p.ProgressManager.UpdateProgressBar("file_"+fileID, 50, "处理音频文件")
+        }
+    } else {
+        if p.ProgressManager != nil {
+            p.ProgressManager.CompleteProgressBar("file_"+fileID, fmt.Sprintf("不支持的格式: %s", ext))
+        }
+        
+        result.Error = fmt.Errorf("不支持的文件格式: %s", ext)
+        return result
+    }
+    
+    // 输出路径
+    result.OutputPath = audioPath
+    result.Success = true
+    
+    // 注意：不在这里完成进度条，因为可能还有ASR处理
+    return result
+}
+
+
 
 // 扫描媒体目录
 func (p *BatchProcessor) scanMediaDirectory() ([]string, error) {

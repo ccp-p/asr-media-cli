@@ -33,6 +33,8 @@ type Config struct {
     LogFile           string  `json:"log_file"`            // 日志文件
     MaxPartTime       int     `json:"max_part_time"`       // 最大部分时间（分钟）
     ExportSRT         bool    `json:"export_srt"`          // 是否导出SRT字幕文件
+    // asr-service
+    ASRService string `json:"asr_service"` // ASR服务名称 ASR服务选择 (kuaishou, bcut, auto)
 }
 
 // ConfigValidationError 表示配置验证错误
@@ -50,8 +52,8 @@ func (e ConfigValidationError) Error() string {
 // NewDefaultConfig 创建默认配置
 func NewDefaultConfig() *Config {
     return &Config{
-        MediaFolder:       "./media",
-        OutputFolder:      "./output",
+        MediaFolder:       "D:\\download",
+        OutputFolder:      "D:\\download\\dest",
         MaxRetries:        3,
         MaxWorkers:        8,
         UseJianyingFirst:  true,
@@ -72,6 +74,7 @@ func NewDefaultConfig() *Config {
         LogFile:           "",
         MaxPartTime:       20,
         ExportSRT:         true,
+        ASRService:       "auto",
     }
 }
 
