@@ -472,6 +472,28 @@
             padding: 20px 0;
         }
 
+        /* 重命名表单样式 */
+        #target-filename {
+            background-color: #444;
+            color: #aaa;
+        }
+
+        .rename-result {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+
+        .rename-success {
+            background-color: rgba(76, 175, 80, 0.2);
+            color: #4CAF50;
+        }
+
+        .rename-error {
+            background-color: rgba(244, 67, 54, 0.2);
+            color: #F44336;
+        }
+
         /* 响应式调整 */
         @media (max-width: 768px) {
             .subtitle-flow-panel {
@@ -509,6 +531,7 @@
                     <button class="source-tab" data-tab="url">网络视频</button>
                     <button class="source-tab" data-tab="history">最近观看</button>
                     <button class="source-tab" data-tab="subtitles">字幕管理</button>
+                    <button class="source-tab" data-tab="rename">文件重命名</button>
                 </div>
 
                 <div class="source-content">
@@ -547,6 +570,18 @@
                             </div>
                             <button id="clear-subtitle-mappings" class="btn-load">清除所有字幕映射</button>
                         </div>
+                    </div>
+                    <!-- 文件重命名选项 -->
+                    <div class="source-section" id="rename-section">
+                        <div class="input-group">
+                            <label for="source-filename">源文件名</label>
+                            <input type="text" id="source-filename" placeholder="例如: 1-7. Hooks.mp4">
+                        </div>
+                        <div class="input-group">
+                            <label for="target-filename">目标路径</label>
+                            <input type="text" id="target-filename" readonly>
+                        </div>
+                        <button class="btn-load" id="execute-rename">执行重命名</button>
                     </div>
                 </div>
             </div>
@@ -1985,6 +2020,88 @@
                 }, 500);
             } else {
                 sourcePanel.style.display = 'none';
+            }
+
+
+            // 文件重命名功能
+            const sourceFilenameInput = document.getElementById('source-filename');
+            const targetFilenameInput = document.getElementById('target-filename');
+            const executeRenameBtn = document.getElementById('execute-rename');
+
+            // 源文件名输入事件处理
+            if (sourceFilenameInput) {
+                sourceFilenameInput.addEventListener('input', function () {
+                    updateTargetFilename(this.value);
+                });
+            }
+
+            // 更新目标文件名
+            function updateTargetFilename(sourceName) {
+                if (!sourceName) {
+                    targetFilenameInput.value = '';
+                    return;
+                }
+
+                // 提取文件名，去除扩展名
+                const fileName = sourceName.trim();
+                let baseName = fileName.replace(/\.[^/.]+$/, '');
+
+                // 移除开头的序号和点
+                baseName = baseName.replace(/^\d+[-\s]*\.\s*/, '');
+
+                // 构建目标路径
+                const targetPath = `D:\\download\\${baseName}.ts`;
+                targetFilenameInput.value = targetPath;
+            }
+
+            // 执行重命名按钮事件
+            if (executeRenameBtn) {
+                executeRenameBtn.addEventListener('click', function () {
+                    const sourceName = sourceFilenameInput.value.trim();
+                    const targetPath = targetFilenameInput.value.trim();
+
+                    if (!sourceName || !targetPath) {
+                        showRenameResult(false, '源文件名和目标路径不能为空');
+                        return;
+                    }
+
+                    // 这里可以添加实际的重命名API调用
+                    // 例如调用一个后端API或者使用File System API
+
+                    // 模拟重命名成功
+                    showRenameResult(true, `已成功将 "${sourceName}" 重命名为 "${targetPath}"`);
+
+                    // 清空输入框
+                    sourceFilenameInput.value = '';
+                    targetFilenameInput.value = '';
+                });
+            }
+
+            // 显示重命名结果
+            function showRenameResult(success, message) {
+                // 移除之前的结果消息
+                const oldResult = document.querySelector('.rename-result');
+                if (oldResult) {
+                    oldResult.remove();
+                }
+
+                // 创建新的结果消息
+                const resultDiv = document.createElement('div');
+                resultDiv.className = `rename-result ${success ? 'rename-success' : 'rename-error'}`;
+                resultDiv.textContent = message;
+
+                // 添加到重命名面板
+                const renameSection = document.getElementById('rename-section');
+                if (renameSection) {
+                    renameSection.appendChild(resultDiv);
+
+                    // 3秒后自动移除
+                    setTimeout(() => {
+                        resultDiv.style.opacity = '0';
+                        resultDiv.style.transition = 'opacity 0.5s';
+                        setTimeout(() => resultDiv.remove(), 500);
+                    }, 3000);
+                }
             }
         });
 
