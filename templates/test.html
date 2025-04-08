@@ -218,13 +218,13 @@
             background-color: rgba(0, 0, 0, 0.9);
             z-index: 2000;
             display: flex;
-            align-items: center;
-            justify-content: center;
+            /* align-items: center; */
+            /* justify-content: center; */
         }
 
         .source-container {
-            width: 80%;
-            max-width: 500px;
+            width: 100%;
+            /* max-width: 500px; */
             background-color: #1a1a1a;
             border-radius: 10px;
             padding: 20px;
@@ -382,6 +382,7 @@
 
         /* 拖放区域样式 */
         .drop-zone {
+            height: 69vh;
             border: 2px dashed #666;
             border-radius: 8px;
             padding: 30px 20px;
@@ -1453,6 +1454,7 @@
                     selectedLocalFile = file;
                     dropZone.innerHTML = `<div class="drop-zone-prompt">已选择: ${file.name}</div>`;
                     loadLocalBtn.textContent = `加载 "${file.name.length > 25 ? file.name.substring(0, 22) + '...' : file.name}"`;
+                    loadLocalBtn.click();
                 } else {
                     alert('请选择视频文件');
                 }
