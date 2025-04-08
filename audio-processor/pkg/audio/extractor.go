@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/models"
 	"github.com/ccp-p/asr-media-cli/audio-processor/internal/ui"
-	"github.com/sirupsen/logrus"
+	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/models"
+	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/utils"
 )
 
 // ProgressCallback 是进度回调函数类型
@@ -63,7 +63,7 @@ func (e *AudioExtractor) ExtractAudioFromVideo(videoPath, outputFolder string) (
 	
 	// 检查音频文件是否已经存在
 	if _, err := os.Stat(audioPath); err == nil {
-		logrus.Infof("音频已存在: %s", audioPath)
+		utils.Info("音频已存在: %s", audioPath)
 		return audioPath, false, nil
 	}
 	
@@ -90,7 +90,7 @@ func (e *AudioExtractor) ExtractAudioFromVideo(videoPath, outputFolder string) (
 		"-y", // 覆盖已存在的文件
 	)
 	
-	logrus.Infof("正在从视频提取音频: %s", videoFilename)
+	utils.Info("正在从视频提取音频: %s", videoFilename)
 	
 	// 更新进度条状态
 	if e.ProgressManager != nil {
@@ -123,7 +123,7 @@ func (e *AudioExtractor) ExtractAudioFromVideo(videoPath, outputFolder string) (
 		return "", false, fmt.Errorf("提取的音频文件不存在: %s", audioPath)
 	}
 	
-	logrus.Infof("音频提取成功: %s", audioPath)
+	utils.Info("音频提取成功: %s", audioPath)
 	
 	// 完成进度条
 	if e.ProgressManager != nil {
@@ -141,7 +141,7 @@ func (e *AudioExtractor) ExtractAudioFromVideo(videoPath, outputFolder string) (
 func (e *AudioExtractor) SplitAudioFile(inputPath string, segmentLength int) ([]string, error) {
 	filename := filepath.Base(inputPath)
 	baseName := filename[:len(filename)-len(filepath.Ext(filename))]
-	logrus.Infof("正在分割 %s 为小片段...", filename)
+	utils.Info("正在分割 %s 为小片段...", filename)
 	
 	// 获取音频总时长
 	duration, err := e.getAudioDuration(inputPath)
@@ -149,7 +149,7 @@ func (e *AudioExtractor) SplitAudioFile(inputPath string, segmentLength int) ([]
 		return nil, fmt.Errorf("获取音频时长失败: %w", err)
 	}
 	
-	logrus.Infof("音频总时长: %d秒", duration)
+	utils.Info("音频总时长: %d秒", duration)
 	
 	// 计算片段数量
 	expectedSegments := (duration + segmentLength - 1) / segmentLength
@@ -249,7 +249,7 @@ func (e *AudioExtractor) SplitAudioFile(inputPath string, segmentLength int) ([]
 	for err := range errors {
 		if err != nil {
 			errorOccurred = true
-			logrus.Errorf("分割音频时出错: %v", err)
+			utils.Error("分割音频时出错: %v", err)
 		}
 	}
 	
@@ -316,7 +316,7 @@ func (e *AudioExtractor) segmentWorker(id int, jobs <-chan AudioSegment,
 			continue
 		}
 		
-		logrus.Debugf("导出片段完成: %s", filepath.Base(job.OutputPath))
+		utils.Debug("导出片段完成: %s", filepath.Base(job.OutputPath))
 		results <- job.OutputPath
 		progress <- 1 // 通知进度更新
 	}

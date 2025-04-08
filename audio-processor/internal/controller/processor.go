@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/fatih/color"
-	"github.com/sirupsen/logrus"
 
 	"github.com/ccp-p/asr-media-cli/audio-processor/internal/adapters"
 	"github.com/ccp-p/asr-media-cli/audio-processor/internal/ui"
@@ -91,7 +90,7 @@ func NewProcessorController(configFile string, logLevel string, logFile string) 
     // 加载配置
     if configFile != "" {
         if err := pc.Config.LoadFromFile(configFile); err != nil {
-            logrus.Warnf("配置加载失败: %v，将使用默认配置", err)
+            utils.Warn("配置加载失败: %v，将使用默认配置", err)
         }
     }
     
@@ -184,7 +183,7 @@ func (pc *ProcessorController) StartWatchMode() error {
     }
     pc.addCleanup(stopMediaMonitor)
     
-    logrus.Info("监控已启动，按Ctrl+C退出...")
+    utils.Info("监控已启动，按Ctrl+C退出...")
     
     // 等待终止信号
     return pc.waitForTermination()
@@ -204,50 +203,50 @@ func (pc *ProcessorController) RunASRService(results []audio.BatchResult) {
         ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
         defer cancel()
         
-        utils.Log.Infof("开始识别文件: %s", audioPath)
+        utils.Info("开始识别文件: %s", audioPath)
         
         start := time.Now()
 		
 		progressCallback := func(percent int, message string) {
-			utils.Log.Infof("进度 [%d%%] %s", percent, message)
+			utils.Info("进度 [%d%%] %s", percent, message)
 		}
 
         segments, serviceName, outputFiles, err := pc.ASRSelector.RunWithService(
             ctx, audioPath, pc.Config.ASRService, false, pc.Config, progressCallback)
         
         if err != nil {
-            utils.Log.Errorf("识别失败: %v", err)
+            utils.Error("识别失败: %v", err)
             continue
         }
         
         duration := time.Since(start)
-        utils.Log.Infof("使用 %s 服务识别完成，耗时 %.2f 秒", serviceName, duration.Seconds())
+        utils.Info("使用 %s 服务识别完成，耗时 %.2f 秒", serviceName, duration.Seconds())
         
         // 输出结果文件信息
         if len(outputFiles) > 0 {
-            utils.Log.Info("生成的文件:")
+            utils.Info("生成的文件:")
             for fileType, filePath := range outputFiles {
-                utils.Log.Infof("- %s: %s", fileType, filePath)
+                utils.Info("- %s: %s", fileType, filePath)
             }
         }
         
         // 输出结果
         if len(segments) == 0 {
-            utils.Log.Info("未识别出任何内容")
+            utils.Info("未识别出任何内容")
             continue
         }
         
-        utils.Log.Infof("识别结果 (%d 段):", len(segments))
+        utils.Info("识别结果 (%d 段):", len(segments))
         for i, seg := range segments {
-            utils.Log.Infof("[%02d] %.2f-%.2f: %s", i+1, seg.StartTime, seg.EndTime, seg.Text)
+            utils.Info("[%02d] %.2f-%.2f: %s", i+1, seg.StartTime, seg.EndTime, seg.Text)
         }
     }
     
     // 输出服务统计信息
     stats := pc.ASRSelector.GetStats()
-    utils.Log.Info("ASR服务统计信息:")
+    utils.Info("ASR服务统计信息:")
     for name, stat := range stats {
-        utils.Log.Infof("%s: 调用次数=%d, 成功率=%s, 可用=%v", 
+        utils.Info("%s: 调用次数=%d, 成功率=%s, 可用=%v", 
             name, stat["count"], stat["success_rate"], stat["available"])
     }
 }
@@ -301,7 +300,7 @@ func (pc *ProcessorController) setupSignalHandlers() {
     
     go func() {
         <-c
-        logrus.Info("接收到中断信号，正在停止...")
+        utils.Info("接收到中断信号，正在停止...")
         pc.cancelFunc() // 取消上下文
     }()
 }
@@ -331,7 +330,7 @@ func (pc *ProcessorController) ProcessAudioWithASR(audioPath string) error {
         return nil // ASR未启用或无音频文件，直接返回
     }
     
-    utils.Log.Infof("开始对文件进行语音识别: %s", filepath.Base(audioPath))
+    utils.Info("开始对文件进行语音识别: %s", filepath.Base(audioPath))
     
     // 创建进度条ID
     barID := "asr_" + filepath.Base(audioPath)
@@ -363,14 +362,14 @@ func (pc *ProcessorController) ProcessAudioWithASR(audioPath string) error {
     
     // 输出结果信息
     if len(outputFiles) > 0 {
-        utils.Log.Info("生成的字幕文件:")
+        utils.Info("生成的字幕文件:")
         for fileType, filePath := range outputFiles {
-            utils.Log.Infof("- %s: %s", fileType, filepath.Base(filePath))
+            utils.Info("- %s: %s", fileType, filepath.Base(filePath))
         }
     }
     
     pc.ProgressManager.CompleteProgressBar(barID, "识别完成")
-    utils.Log.Infof("文件 %s 识别完成，共 %d 段文本", filepath.Base(audioPath), len(segments))
+    utils.Info("文件 %s 识别完成，共 %d 段文本", filepath.Base(audioPath), len(segments))
     
     return nil
 }

@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/fatih/color"
-	"github.com/sirupsen/logrus"
 
 	"github.com/ccp-p/asr-media-cli/audio-processor/internal/controller"
 	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/audio"
@@ -35,7 +34,7 @@ func main() {
     
     // 检查依赖
     if !checkDependencies() {
-        logrus.Fatal("缺少必要的依赖项，无法继续")
+        utils.Fatal("缺少必要的依赖项，无法继续")
         os.Exit(1)
     }
     
@@ -44,12 +43,12 @@ func main() {
     // 根据模式执行不同的处理
     if controller.Config.WatchMode {
         if err := controller.StartWatchMode(); err != nil {
-            logrus.Fatalf("监控模式运行失败: %v", err)
+            utils.Fatal("监控模式运行失败: %v", err)
         }
     } else {
         results, err = controller.ProcessMedia()
         if err != nil {
-            logrus.Fatalf("处理媒体文件失败: %v", err)
+            utils.Fatal("处理媒体文件失败: %v", err)
         }
         
         if controller.Config.ExportSRT && len(results) > 0 {
@@ -76,7 +75,7 @@ func checkDependencies() bool {
 	// 检查ffmpeg
 	if !utils.CheckFFmpeg() {
 		color.Red("失败")
-		logrus.Error("未检测到FFmpeg，请确保FFmpeg已安装并添加到系统路径")
+		utils.Error("未检测到FFmpeg，请确保FFmpeg已安装并添加到系统路径")
 		return false
 	}
 

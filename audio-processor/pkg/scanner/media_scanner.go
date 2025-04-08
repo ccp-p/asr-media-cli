@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sirupsen/logrus"
+	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/utils"
 )
 
 // MediaFile 表示一个媒体文件
@@ -39,7 +39,7 @@ func NewMediaScanner() *MediaScanner {
 func (s *MediaScanner) ScanDirectory(dir string) ([]MediaFile, error) {
 	var mediaFiles []MediaFile
 
-	logrus.Infof("开始扫描目录: %s", dir)
+	utils.Info("开始扫描目录: %s", dir)
 	
 	  // 读取目录内容（非递归）
 	  entries, err := os.ReadDir(dir)
@@ -56,7 +56,7 @@ func (s *MediaScanner) ScanDirectory(dir string) ([]MediaFile, error) {
 		  // 获取文件信息
 		  info, err := entry.Info()
 		  if err != nil {
-			  logrus.Warnf("获取文件信息失败: %v", err)
+			  utils.Warn("获取文件信息失败: %v", err)
 			  continue
 		  }
 		  
@@ -96,7 +96,7 @@ func (s *MediaScanner) ScanDirectory(dir string) ([]MediaFile, error) {
 		  }
 	  }
 	
-	logrus.Infof("扫描完成，共找到 %d 个媒体文件", len(mediaFiles))
+	utils.Info("扫描完成，共找到 %d 个媒体文件", len(mediaFiles))
 	
 	return mediaFiles, err
 }
@@ -111,7 +111,7 @@ func (s *MediaScanner) FilterNewFiles(files []MediaFile, processedPaths map[stri
 		}
 	}
 	
-	logrus.Infof("过滤后剩余 %d 个新文件需要处理", len(newFiles))
+	utils.Info("过滤后剩余 %d 个新文件需要处理", len(newFiles))
 	
 	return newFiles
 }

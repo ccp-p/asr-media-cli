@@ -10,8 +10,8 @@ import (
 
 	"github.com/ccp-p/asr-media-cli/audio-processor/internal/adapters"
 	"github.com/ccp-p/asr-media-cli/audio-processor/internal/ui"
+	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/utils"
 	"github.com/fsnotify/fsnotify"
-	"github.com/sirupsen/logrus"
 )
 
 // FileEventHandler 是处理文件事件的接口
@@ -108,7 +108,7 @@ func (m *FolderMonitor) Start() error {
 		go m.processExistingFiles()
 	}
 
-	logrus.Infof("开始监控文件夹: %s", m.folderPath)
+	utils.Info("开始监控文件夹: %s", m.folderPath)
 	return nil
 }
 
@@ -116,7 +116,7 @@ func (m *FolderMonitor) Start() error {
 func (m *FolderMonitor) processExistingFiles() {
 	entries, err := os.ReadDir(m.folderPath)
 	if err != nil {
-		logrus.Errorf("读取文件夹失败: %v", err)
+		utils.Error("读取文件夹失败: %v", err)
 		return
 	}
 	
@@ -132,7 +132,7 @@ func (m *FolderMonitor) processExistingFiles() {
 		}
 	}
 	
-	logrus.Infof("找到 %d 个现有媒体文件", len(mediaFiles))
+	utils.Info("找到 %d 个现有媒体文件", len(mediaFiles))
 	
 	// 创建进度条
 	if m.progressManager != nil {
@@ -144,7 +144,7 @@ func (m *FolderMonitor) processExistingFiles() {
 	for i, filePath := range mediaFiles {
 		// 检查是否已处理
 		if m.processor != nil && m.processor.IsRecognizedFile(filePath) {
-			logrus.Infof("跳过已处理的文件: %s", filepath.Base(filePath))
+			utils.Info("跳过已处理的文件: %s", filepath.Base(filePath))
 			continue
 		}
 		
@@ -168,7 +168,7 @@ func (m *FolderMonitor) processExistingFiles() {
 func (m *FolderMonitor) Stop() {
 	close(m.stopChan)
 	m.watcher.Close()
-	logrus.Info("停止监控文件夹: %s", m.folderPath)
+	utils.Info("停止监控文件夹: %s", m.folderPath)
 
 	// 取消所有待处理的文件定时器
 	m.mutex.Lock()
@@ -193,7 +193,7 @@ func (m *FolderMonitor) watchLoop() {
 			if !ok {
 				return
 			}
-			logrus.Errorf("监控文件夹时出错: %v", err)
+			utils.Error("监控文件夹时出错: %v", err)
 		}
 	}
 }
@@ -223,7 +223,7 @@ func (m *FolderMonitor) handleFileEvent(event fsnotify.Event) {
 		m.processFile(filePath)
 	})
 
-	logrus.Debugf("检测到文件变化: %s", filePath)
+	utils.Debug("检测到文件变化: %s", filePath)
 }
 
 // 判断是否为目标文件类型
@@ -269,7 +269,7 @@ func (m *FolderMonitor) processFile(filePath string) {
 		return
 	}
 
-	logrus.Infof("准备处理文件: %s", filePath)
+	utils.Info("准备处理文件: %s", filePath)
 	
 	// 使用处理器处理文件
 	if m.processor != nil {
@@ -278,9 +278,9 @@ func (m *FolderMonitor) processFile(filePath string) {
 			time.Sleep(2 * time.Second)
 			
 			if m.processor.ProcessFile(filePath) {
-				logrus.Infof("文件处理成功: %s", filePath)
+				utils.Info("文件处理成功: %s", filePath)
 			} else {
-				logrus.Errorf("文件处理失败: %s", filePath)
+				utils.Error("文件处理失败: %s", filePath)
 			}
 		}()
 		return
@@ -375,11 +375,11 @@ func (h *FileMovementHandler) moveFile(sourcePath string) {
 
 	// 移动文件
 	if err := os.Rename(sourcePath, targetPath); err != nil {
-		logrus.Errorf("移动文件失败 %s -> %s: %v", sourcePath, targetPath, err)
+		utils.Error("移动文件失败 %s -> %s: %v", sourcePath, targetPath, err)
 		return
 	}
 
-	logrus.Infof("文件已移动: %s -> %s", sourcePath, targetPath)
+	utils.Info("文件已移动: %s -> %s", sourcePath, targetPath)
 }
 
 // StartFolderMonitoring 开始监控文件夹并移动文件
@@ -413,7 +413,7 @@ func StartMediaFolderMonitoring(mediaFolder string, processor adapters.MediaProc
 		return nil, fmt.Errorf("启动媒体文件夹监控器失败: %w", err)
 	}
 	
-	logrus.Infof("媒体文件夹监控已启动: %s", mediaFolder)
+	utils.Info("媒体文件夹监控已启动: %s", mediaFolder)
 	
 	// 返回停止函数
 	return func() {

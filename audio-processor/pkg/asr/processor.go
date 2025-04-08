@@ -11,7 +11,6 @@ import (
 	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/export"
 	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/models"
 	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/utils"
-	"github.com/sirupsen/logrus"
 )
 
 // ASRProcessor 处理ASR结果和导出
@@ -51,7 +50,7 @@ func (p *ASRProcessor) ProcessResults(ctx context.Context, segments []models.Dat
 	if p.Config.ExportSRT && len(segments) > 0 {
 		srtPath, err := p.SRTExporter.ExportSRT(segments, audioPath, partNum)
 		if err != nil {
-			logrus.Warnf("导出SRT字幕失败: %v", err)
+			utils.Warn("导出SRT字幕失败: %v", err)
 		} else {
 			outputFiles["srt"] = srtPath
 		}

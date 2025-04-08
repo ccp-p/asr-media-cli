@@ -12,7 +12,6 @@ import (
 	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/asr"
 	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/models"
 	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/utils"
-	"github.com/sirupsen/logrus"
 )
 
 // BatchResult 存储批处理结果
@@ -103,7 +102,7 @@ func NewBatchProcessor(mediaDir, outputDir, tempDir string, callback BatchProgre
 func (p *BatchProcessor) loadProcessedRecords() {
 	data, err := utils.LoadJSONFile(p.processedRecordFile, make(map[string]ProcessedRecord))
 	if err != nil {
-		logrus.Warnf("加载处理记录失败: %v, 将使用空记录", err)
+		utils.Warn("加载处理记录失败: %v, 将使用空记录", err)
 		p.processedRecords = make(map[string]ProcessedRecord)
 		return
 	}
@@ -141,18 +140,18 @@ func (p *BatchProcessor) loadProcessedRecords() {
 			}
 		}
 	} else {
-		logrus.Warnf("处理记录格式错误，将使用空记录")
+		utils.Warn("处理记录格式错误，将使用空记录")
 		p.processedRecords = make(map[string]ProcessedRecord)
 	}
 
-	logrus.Infof("已加载处理记录: %d 个文件", len(p.processedRecords))
+	utils.Info("已加载处理记录: %d 个文件", len(p.processedRecords))
 }
 
 // saveProcessedRecords 保存处理记录到文件
 func (p *BatchProcessor) saveProcessedRecords() error {
 	err := utils.SaveJSONFile(p.processedRecordFile, p.processedRecords)
 	if err != nil {
-		logrus.Errorf("保存处理记录失败: %v", err)
+		utils.Error("保存处理记录失败: %v", err)
 		return fmt.Errorf("保存处理记录失败: %w", err)
 	}
 	return nil
@@ -247,7 +246,7 @@ func (p *BatchProcessor) ProcessVideoFiles() ([]BatchResult, error) {
 
 	// 保存处理记录
 	if err := p.saveProcessedRecords(); err != nil {
-		logrus.Warnf("保存处理记录失败: %v", err)
+		utils.Warn("保存处理记录失败: %v", err)
 	}
 
 	return allResults, nil
@@ -333,7 +332,7 @@ func (p *BatchProcessor) updateProcessedRecord(filePath string, result *BatchRes
 
 	// 保存到文件
 	if err := p.saveProcessedRecords(); err != nil {
-		logrus.Warnf("保存处理记录失败: %v", err)
+		utils.Warn("保存处理记录失败: %v", err)
 	}
 }
 
@@ -354,10 +353,10 @@ func (p *BatchProcessor) UpdateProcessedRecordOnRename(oldPath, newPath string) 
 
 		// 保存更新后的记录
 		if err := p.saveProcessedRecords(); err != nil {
-			logrus.Warnf("保存处理记录失败: %v", err)
+			utils.Warn("保存处理记录失败: %v", err)
 		}
 
-		logrus.Infof("已更新处理记录: %s -> %s", oldPath, newPath)
+		utils.Info("已更新处理记录: %s -> %s", oldPath, newPath)
 	}
 }
 
@@ -389,7 +388,7 @@ func (p *BatchProcessor) performASROnAudio(result *BatchResult) error {
 		p.ProgressManager.UpdateProgressBar("file_"+fileID, 85, "执行语音识别...")
 	}
 
-	utils.Log.Infof("开始对文件进行语音识别: %s", filepath.Base(audioPath))
+	utils.Info("开始对文件进行语音识别: %s", filepath.Base(audioPath))
 
 	// 创建进度条ID
 	barID := "asr_" + filepath.Base(audioPath)
@@ -423,13 +422,13 @@ func (p *BatchProcessor) performASROnAudio(result *BatchResult) error {
 
 	// 输出结果信息
 	if len(outputFiles) > 0 {
-		utils.Log.Info("生成的字幕文件:")
+		utils.Info("生成的字幕文件:")
 		for fileType, filePath := range outputFiles {
-			utils.Log.Infof("- %s: %s", fileType, filepath.Base(filePath))
+			utils.Info("- %s: %s", fileType, filepath.Base(filePath))
 		}
 	}
 
-	utils.Log.Infof("文件 %s 识别完成，共 %d 段文本", filepath.Base(audioPath), len(segments))
+	utils.Info("文件 %s 识别完成，共 %d 段文本", filepath.Base(audioPath), len(segments))
 
 	// 完成文件进度条
 	if p.ProgressManager != nil {
@@ -456,7 +455,7 @@ func (p *BatchProcessor) extractAudioFromFile(filePath string) BatchResult {
 
 	// 为每个文件单独设置进度回调
 	segmentCallback := func(current, total int, message string) {
-		logrus.Infof("[%s] 进度: %d/%d - %s", filename, current, total, message)
+		utils.Info("[%s] 进度: %d/%d - %s", filename, current, total, message)
 	}
 
 	// 设置提取器的回调

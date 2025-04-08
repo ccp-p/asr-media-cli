@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/ccp-p/asr-media-cli/audio-processor/internal/ui"
-	"github.com/sirupsen/logrus"
+	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/utils"
 )
 
 // SegmentProgressMonitor 监控片段处理进度
@@ -73,7 +73,7 @@ func (m *SegmentProgressMonitor) checkSegments() {
 	// 获取目录下的所有文件
 	files, err := os.ReadDir(segmentsDir)
 	if err != nil {
-		logrus.Debugf("监控临时片段目录失败: %v", err)
+		utils.Debug("监控临时片段目录失败: %v", err)
 		return
 	}
 	

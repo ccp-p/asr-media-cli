@@ -47,7 +47,7 @@ func (k *KuaiShouASR) GetResult(ctx context.Context, callback ProgressCallback) 
 	cacheKey := k.GetCacheKey("KuaiShouASR")
 	if k.UseCache {
 		if segments, ok := k.LoadFromCache("./cache", cacheKey); ok {
-			utils.Log.Info("从缓存加载快手ASR结果")
+			utils.Info("从缓存加载快手ASR结果")
 			return segments, nil
 		}
 	}
@@ -74,7 +74,7 @@ func (k *KuaiShouASR) GetResult(ctx context.Context, callback ProgressCallback) 
 	// 缓存结果
 	if k.UseCache {
 		if err := k.SaveToCache("./cache", cacheKey, segments); err != nil {
-			utils.Log.Warnf("保存快手ASR结果到缓存失败: %v", err)
+			utils.Warn("保存快手ASR结果到缓存失败: %v", err)
 		}
 	}
 
@@ -119,7 +119,7 @@ func (k *KuaiShouASR) submit(ctx context.Context) (*KuaiShouResponse, error) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		utils.Log.Errorf("快手ASR请求发送失败: %v", err)
+		utils.Error("快手ASR请求发送失败: %v", err)
 		return &KuaiShouResponse{}, nil
 	}
 	defer resp.Body.Close()
@@ -127,14 +127,14 @@ func (k *KuaiShouASR) submit(ctx context.Context) (*KuaiShouResponse, error) {
 	// 读取响应
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		utils.Log.Errorf("读取响应失败: %v", err)
+		utils.Error("读取响应失败: %v", err)
 		return &KuaiShouResponse{}, nil
 	}
 
 	// 解析JSON
 	var result KuaiShouResponse
 	if err := json.Unmarshal(body, &result); err != nil {
-		utils.Log.Errorf("解析响应JSON失败: %v", err)
+		utils.Error("解析响应JSON失败: %v", err)
 		return &KuaiShouResponse{}, nil
 	}
 

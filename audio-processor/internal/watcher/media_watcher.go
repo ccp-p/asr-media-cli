@@ -8,7 +8,7 @@ import (
 	"github.com/ccp-p/asr-media-cli/audio-processor/internal/ui"
 	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/audio"
 	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/models"
-	"github.com/sirupsen/logrus"
+	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/utils"
 )
 
 // MediaWatcher 媒体文件监控器
@@ -68,7 +68,7 @@ func (w *MediaWatcher) Start() error {
 	}
 	w.stopFuncs = append(w.stopFuncs, stopOutput)
 	
-	logrus.Info("媒体文件监控已启动")
+	utils.Info("媒体文件监控已启动")
 	return nil
 }
 
@@ -77,7 +77,7 @@ func (w *MediaWatcher) Stop() {
 	for _, stop := range w.stopFuncs {
 		stop()
 	}
-	logrus.Info("媒体文件监控已停止")
+	utils.Info("媒体文件监控已停止")
 }
 
 // WatchManager 监控管理器，管理所有监控活动
@@ -116,7 +116,7 @@ func (m *WatchManager) Start() error {
 		return err
 	}
 	
-	logrus.Info("所有监控任务已启动")
+	utils.Info("所有监控任务已启动")
 	
 	// 创建状态更新定时器
 	go m.periodicStatusUpdate()
@@ -128,7 +128,7 @@ func (m *WatchManager) Start() error {
 func (m *WatchManager) Stop() {
 	m.segmentMonitor.Stop()
 	m.mediaWatcher.Stop()
-	logrus.Info("所有监控任务已停止")
+	utils.Info("所有监控任务已停止")
 }
 
 // periodicStatusUpdate 定期更新状态

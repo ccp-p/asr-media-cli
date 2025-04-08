@@ -60,7 +60,7 @@ func (s *ASRSelector) RegisterService(name string, creator ServiceCreator, weigh
 	}
 	s.serviceList = append(s.serviceList, name)
 
-	utils.Log.Infof("注册ASR服务: %s, 权重: %d", name, weight)
+	utils.Info("注册ASR服务: %s, 权重: %d", name, weight)
 }
 
 // ReportResult 报告服务调用结果
@@ -77,10 +77,10 @@ func (s *ASRSelector) ReportResult(serviceName string, success bool) {
 		// 更新服务可用性
 		if !success && stat.TotalCount > 5 && float64(stat.SuccessCount)/float64(stat.TotalCount) < 0.2 {
 			stat.Available = false
-			utils.Log.Warnf("ASR服务 %s 成功率过低，临时禁用", serviceName)
+			utils.Warn("ASR服务 %s 成功率过低，临时禁用", serviceName)
 		} else if success && !stat.Available {
 			stat.Available = true
-			utils.Log.Infof("ASR服务 %s 恢复可用", serviceName)
+			utils.Info("ASR服务 %s 恢复可用", serviceName)
 		}
 	}
 }
@@ -231,7 +231,7 @@ func (s *ASRSelector) RunWithService(ctx context.Context, audioPath string, serv
 		processor := NewASRProcessor(config)
 		outputFiles, err = processor.ProcessResults(ctx, segments, audioPath, nil)
 		if err != nil {
-			utils.Log.Warnf("处理ASR结果失败: %v", err)
+			utils.Warn("处理ASR结果失败: %v", err)
 		}
 	}
 	

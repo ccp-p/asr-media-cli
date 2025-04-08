@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/fatih/color"
-	"github.com/sirupsen/logrus"
 
 	"github.com/ccp-p/asr-media-cli/audio-processor/internal/adapters"
 	"github.com/ccp-p/asr-media-cli/audio-processor/internal/ui"
@@ -54,7 +53,7 @@ func processMedia() []audio.BatchResult {
 	// 创建临时目录
 	tempDir, err := ioutil.TempDir("", "audio-processor")
 	if err != nil {
-		logrus.Fatalf("创建临时目录失败: %v", err)
+		utils.Fatal("创建临时目录失败: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
 
@@ -79,7 +78,7 @@ func processMedia() []audio.BatchResult {
 	startTime := time.Now()
 	results, err := processor.ProcessVideoFiles()
 	if err != nil {
-		logrus.Fatalf("处理文件失败: %v", err)
+		utils.Fatal("处理文件失败: %v", err)
 	}
 
 	// 停止片段监控
@@ -126,7 +125,7 @@ func startWatchMode(config *models.Config) {
 	// 创建临时目录
 	tempDir, err := ioutil.TempDir("", "audio-processor-watch")
 	if err != nil {
-		logrus.Fatalf("创建临时目录失败: %v", err)
+		utils.Fatal("创建临时目录失败: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
 
@@ -160,7 +159,7 @@ func startWatchMode(config *models.Config) {
 	fmt.Printf("监控下载目录: %s -> %s\n", config.OutputFolder, config.MediaFolder)
 	stopDownloadMonitor, err := watcher.StartFolderMonitoring(config.OutputFolder, config.MediaFolder)
 	if err != nil {
-		logrus.Fatalf("启动下载目录监控失败: %v", err)
+		utils.Fatal("启动下载目录监控失败: %v", err)
 	}
 
 	// 2. 启动媒体目录监控，处理媒体文件
@@ -171,7 +170,7 @@ func startWatchMode(config *models.Config) {
 		if stopSegmentMonitoring != nil {
 			stopSegmentMonitoring()
 		}
-		logrus.Fatalf("启动媒体目录监控失败: %v", err)
+		utils.Fatal("启动媒体目录监控失败: %v", err)
 	}
 
 	// 提示用户如何退出
@@ -209,7 +208,7 @@ func main() {
 
 	// 检查ffmpeg是否可用
 	if !checkDependencies() {
-		logrus.Fatal("缺少必要的依赖项，无法继续")
+		utils.Fatal("缺少必要的依赖项，无法继续")
 		os.Exit(1)
 	}
 
@@ -232,7 +231,7 @@ func main() {
 	color.Green("\n所有处理任务已完成!")
 
 	if config.ExportSRT{
-		logrus.Info("启用SRT字幕导出功能")
+		utils.Info("启用SRT字幕导出功能")
 		selector := registerService()
 		runAsrService(config,selector)
 	}
@@ -311,7 +310,7 @@ func checkDependencies() bool {
 	// 检查ffmpeg
 	if !utils.CheckFFmpeg() {
 		color.Red("失败")
-		logrus.Error("未检测到FFmpeg，请确保FFmpeg已安装并添加到系统路径")
+		utils.Error("未检测到FFmpeg，请确保FFmpeg已安装并添加到系统路径")
 		return false
 	}
 
@@ -329,12 +328,12 @@ func loadConfig() *models.Config {
 		err := config.LoadFromFile(*configFile)
 		if err != nil {
 			color.Yellow("警告: 加载配置文件失败: %v", err)
-			logrus.Warnf("配置加载失败: %v，将使用默认配置", err)
+			utils.Warn("配置加载失败: %v，将使用默认配置", err)
 		} else {
 			color.Green("成功")
 			// 打印是否启用SRT导出
 			if config.ExportSRT {
-				logrus.Info("已启用SRT字幕导出功能")
+				utils.Info("已启用SRT字幕导出功能")
 			}
 		}
 	} else {

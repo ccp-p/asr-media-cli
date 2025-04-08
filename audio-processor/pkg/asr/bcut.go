@@ -63,7 +63,7 @@ func (b *BcutASR) GetResult(ctx context.Context, callback ProgressCallback) ([]m
 	cacheKey := b.GetCacheKey("BcutASR")
 	if b.UseCache {
 		if segments, ok := b.LoadFromCache("./cache", cacheKey); ok {
-			utils.Log.Info("从缓存加载必剪ASR结果")
+			utils.Info("从缓存加载必剪ASR结果")
 			return segments, nil
 		}
 	}
@@ -110,7 +110,7 @@ func (b *BcutASR) GetResult(ctx context.Context, callback ProgressCallback) ([]m
 	// 缓存结果
 	if b.UseCache && len(segments) > 0 {
 		if err := b.SaveToCache("./cache", cacheKey, segments); err != nil {
-			utils.Log.Warnf("保存必剪ASR结果到缓存失败: %v", err)
+			utils.Warn("保存必剪ASR结果到缓存失败: %v", err)
 		}
 	}
 
@@ -196,7 +196,7 @@ func (b *BcutASR) requestUpload() error {
 	
 	b.clips = len(b.uploadURLs)
 
-	utils.Log.Infof("申请上传成功, 总计大小%dKB, %d分片, 分片大小%dKB: %s", 
+	utils.Info("申请上传成功, 总计大小%dKB, %d分片, 分片大小%dKB: %s", 
 		len(b.FileBinary)/1024, b.clips, b.perSize/1024, b.inBossKey)
 
 	return nil
@@ -213,7 +213,7 @@ func (b *BcutASR) uploadParts() error {
 			endRange = len(b.FileBinary)
 		}
 		
-		utils.Log.Infof("开始上传分片%d: %d-%d", i, startRange, endRange)
+		utils.Info("开始上传分片%d: %d-%d", i, startRange, endRange)
 		
 		req, err := http.NewRequest("PUT", b.uploadURLs[i], bytes.NewBuffer(b.FileBinary[startRange:endRange]))
 		if err != nil {
@@ -248,7 +248,7 @@ func (b *BcutASR) uploadParts() error {
 		}
 		
 		b.etags[i] = etag
-		utils.Log.Infof("分片%d上传成功: %s", i, etag)
+		utils.Info("分片%d上传成功: %s", i, etag)
 	}
 	
 	return nil
@@ -301,7 +301,7 @@ func (b *BcutASR) commitUpload() error {
 	}
 
 	b.downloadURL = data["download_url"].(string)
-	utils.Log.Infof("提交成功，获取下载URL: %s", b.downloadURL)
+	utils.Info("提交成功，获取下载URL: %s", b.downloadURL)
 
 	return nil
 }
@@ -362,7 +362,7 @@ func (b *BcutASR) createTask() error {
 	}
 
 	b.taskID = data["task_id"].(string)
-	utils.Log.Infof("任务已创建: %s", b.taskID)
+	utils.Info("任务已创建: %s", b.taskID)
 
 	return nil
 }
@@ -444,7 +444,7 @@ func (b *BcutASR) makeSegments(result map[string]interface{}) []models.DataSegme
 
 	utterances, ok := result["utterances"].([]interface{})
 	if !ok {
-		utils.Log.Warnf("解析B站ASR结果失败: 未找到utterances数组")
+		utils.Warn("解析B站ASR结果失败: 未找到utterances数组")
 		return segments
 	}
 

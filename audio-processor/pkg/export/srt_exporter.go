@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/models"
-	"github.com/sirupsen/logrus"
+	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/utils"
 )
 
 // SRTExporter 负责将ASR结果导出为SRT字幕文件
@@ -96,6 +96,6 @@ func (e *SRTExporter) ExportSRT(segments []models.DataSegment, filename string, 
 		return "", fmt.Errorf("写入SRT文件失败: %w", err)
 	}
 	
-	logrus.Infof("已导出SRT字幕: %s", outputFile)
+	utils.Info("已导出SRT字幕: %s", outputFile)
 	return outputFile, nil
 }

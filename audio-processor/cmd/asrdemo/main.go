@@ -31,7 +31,7 @@ func main() {
 	
 	// 检查音频文件路径
 	if *audioPath == "" {
-		utils.Log.Fatal("必须指定音频文件路径")
+		utils.Fatal("必须指定音频文件路径")
 	}
 	
 	// 创建上下文
@@ -54,11 +54,11 @@ func main() {
 	},30)
 	// TODO: 注册更多ASR服务
 	
-	utils.Log.Info("开始识别音频文件...")
+	utils.Info("开始识别音频文件...")
 	
 	// 进度回调
 	progressCallback := func(percent int, message string) {
-		utils.Log.Infof("进度 [%d%%] %s", percent, message)
+		utils.Info("进度 [%d%%] %s", percent, message)
 	}
 	
 	// 创建配置
@@ -76,36 +76,36 @@ func main() {
 	start := time.Now()
 	segments, serviceName, outputFiles, err := selector.RunWithService(ctx, *audioPath, *service, *useCache, config, progressCallback)
 	if err != nil {
-		utils.Log.Fatalf("识别失败: %v", err)
+		utils.Fatal("识别失败: %v", err)
 	}
 	
 	duration := time.Since(start)
-	utils.Log.Infof("使用 %s 服务识别完成，耗时 %.2f 秒", serviceName, duration.Seconds())
+	utils.Info("使用 %s 服务识别完成，耗时 %.2f 秒", serviceName, duration.Seconds())
 	
 	// 输出结果文件信息
 	if len(outputFiles) > 0 {
-		utils.Log.Info("生成的文件:")
+		utils.Info("生成的文件:")
 		for fileType, filePath := range outputFiles {
-			utils.Log.Infof("- %s: %s", fileType, filePath)
+			utils.Info("- %s: %s", fileType, filePath)
 		}
 	}
 	
 	// 输出结果
 	if len(segments) == 0 {
-		utils.Log.Info("未识别出任何内容")
+		utils.Info("未识别出任何内容")
 		return
 	}
 	
-	utils.Log.Infof("识别结果 (%d 段):", len(segments))
+	utils.Info("识别结果 (%d 段):", len(segments))
 	for i, seg := range segments {
-		utils.Log.Infof("[%02d] %.2f-%.2f: %s", i+1, seg.StartTime, seg.EndTime, seg.Text)
+		utils.Info("[%02d] %.2f-%.2f: %s", i+1, seg.StartTime, seg.EndTime, seg.Text)
 	}
 	
 	// 输出服务统计信息
 	stats := selector.GetStats()
-	utils.Log.Info("ASR服务统计信息:")
+	utils.Info("ASR服务统计信息:")
 	for name, stat := range stats {
-		utils.Log.Infof("%s: 调用次数=%d, 成功率=%s, 可用=%v", 
+		utils.Info("%s: 调用次数=%d, 成功率=%s, 可用=%v", 
 			name, stat["count"], stat["success_rate"], stat["available"])
 	}
 }

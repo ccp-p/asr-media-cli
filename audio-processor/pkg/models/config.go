@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/sirupsen/logrus"
+	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/utils"
 )
 
 // Config 表示应用程序的配置
@@ -45,7 +45,7 @@ type ConfigValidationError struct {
 
 func (e ConfigValidationError) Error() string {
     msg := fmt.Sprintf("配置验证错误: %s - %s", e.Field, e.Message)
-    logrus.Error(msg)  // 记录日志
+    utils.Error(msg)  // 记录日志
     return msg         // 返回错误信息
 }
 
@@ -121,18 +121,18 @@ func (c *Config) Validate() error {
 func (c *Config) LoadFromFile(path string) error {
     data, err := os.ReadFile(path)
     if err != nil {
-        logrus.Errorf("读取配置文件失败: %v", err)
+        utils.Error("读取配置文件失败: %v", err)
         return err
     }
 
     err = json.Unmarshal(data, c)
     if err != nil {
-        logrus.Errorf("解析配置文件失败: %v", err)
+        utils.Error("解析配置文件失败: %v", err)
         return err
     }
 
     if err := c.Validate(); err != nil {
-        logrus.Errorf("配置验证失败: %v", err)
+        utils.Error("配置验证失败: %v", err)
         return err
     }
 
@@ -144,19 +144,19 @@ func (c *Config) SaveToFile(path string) error {
     // 确保目录存在
     dir := filepath.Dir(path)
     if err := os.MkdirAll(dir, 0755); err != nil {
-        logrus.Errorf("创建目录失败: %v", err)
+        utils.Error("创建目录失败: %v", err)
         return err
     }
 
     data, err := json.MarshalIndent(c, "", "  ")
     if err != nil {
-        logrus.Errorf("序列化配置失败: %v", err)
+        utils.Error("序列化配置失败: %v", err)
         return err
     }
 
     err = os.WriteFile(path, data, 0644)
     if err != nil {
-        logrus.Errorf("写入配置文件失败: %v", err)
+        utils.Error("写入配置文件失败: %v", err)
         return err
     }
 
@@ -172,7 +172,7 @@ func (c *Config) Update(updates map[string]interface{}) error {
     // 这种方式处理map到struct的转换较为方便
     updateBytes, err := json.Marshal(updates)
     if err != nil {
-        logrus.Errorf("序列化更新数据失败: %v", err)
+        utils.Error("序列化更新数据失败: %v", err)
         return err
     }
 
@@ -180,7 +180,7 @@ func (c *Config) Update(updates map[string]interface{}) error {
     if err != nil {
         // 回滚配置
         *c = tempConfig
-        logrus.Errorf("应用配置更新失败: %v", err)
+        utils.Error("应用配置更新失败: %v", err)
         return err
     }
 
@@ -188,7 +188,7 @@ func (c *Config) Update(updates map[string]interface{}) error {
     if err := c.Validate(); err != nil {
         // 回滚配置
         *c = tempConfig
-        logrus.Errorf("配置验证失败: %v", err)
+        utils.Error("配置验证失败: %v", err)
         return err
     }
 
@@ -203,13 +203,13 @@ func (c *Config) Reset() {
 
 // PrintConfig 打印当前配置
 func (c *Config) PrintConfig() {
-    logrus.Info("\n当前配置:")
+    utils.Info("\n当前配置:")
     bytes, err := json.MarshalIndent(c, "", "  ")
     if err != nil {
-        logrus.Errorf("序列化配置失败: %v", err)
+        utils.Error("序列化配置失败: %v", err)
         return
     }
-    logrus.Info(string(bytes))
+    utils.Info(string(bytes))
 }
 
 // 确保目录存在，如果不存在则创建

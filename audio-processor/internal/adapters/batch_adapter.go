@@ -48,6 +48,6 @@ func (a *BatchProcessorAdapter) HandleRename(oldPath, newPath string) {
     if a.renameHandler != nil {
         a.renameHandler(oldPath, newPath)
     } else {
-        utils.Log.Debug("未设置文件重命名处理函数")
+        utils.Debug("未设置文件重命名处理函数")
     }
 }

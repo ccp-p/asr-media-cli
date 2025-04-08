@@ -40,7 +40,7 @@ func (b *BaseASR) loadFile() error {
 	// 判断是否是二进制数据或文件路径
 	if _, err := os.Stat(b.AudioPath); err == nil {
 		// 是文件路径
-		utils.Log.Infof("从文件读取音频数据: %s", b.AudioPath)
+		utils.Info("从文件读取音频数据: %s", b.AudioPath)
 		b.FileBinary, err = ioutil.ReadFile(b.AudioPath)
 		if err != nil {
 			return fmt.Errorf("读取音频文件失败: %w", err)
@@ -57,7 +57,7 @@ func (b *BaseASR) loadFile() error {
 func (b *BaseASR) calculateCRC32() {
 	b.CRC32 = crc32.ChecksumIEEE(b.FileBinary)
 	b.CRC32Hex = fmt.Sprintf("%08x", b.CRC32)
-	utils.Log.Debugf("计算的CRC32校验和: %s", b.CRC32Hex)
+	utils.Debug("计算的CRC32校验和: %s", b.CRC32Hex)
 }
 
 // GetCacheKey 获取缓存键名
@@ -73,7 +73,7 @@ func (b *BaseASR) LoadFromCache(cacheDir, cacheKey string) ([]models.DataSegment
 
 	cacheFilePath := filepath.Join(cacheDir, cacheKey)
 	if _, err := os.Stat(cacheFilePath); os.IsNotExist(err) {
-		utils.Log.Debugf("缓存文件不存在: %s", cacheFilePath)
+		utils.Debug("缓存文件不存在: %s", cacheFilePath)
 		return nil, false
 	}
 
