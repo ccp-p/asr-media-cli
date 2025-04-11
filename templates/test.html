@@ -581,6 +581,11 @@
                             <label for="target-filename">目标路径</label>
                             <input type="text" id="target-filename" readonly>
                         </div>
+                        <div class="option">
+                            <span style="color: white;">保留文件名序号前缀</span>
+                            <input type="checkbox" id="keepPrefix" checked>
+                            <label for="keepPrefix">保留文件名序号前缀</label>
+                        </div>
                         <button class="btn-load" id="execute-rename">执行重命名</button>
                     </div>
                 </div>
@@ -2027,12 +2032,14 @@
             const sourceFilenameInput = document.getElementById('source-filename');
             const targetFilenameInput = document.getElementById('target-filename');
             const executeRenameBtn = document.getElementById('execute-rename');
+            const keepPrefixCheckbox = document.getElementById('keepPrefix');
 
             // 源文件名输入事件处理
             if (sourceFilenameInput) {
                 sourceFilenameInput.addEventListener('input', function () {
-                    updateTargetFilename(this.value);
-                    copyToClipboard(this.value); // 复制源文件名到剪贴板
+                    const targetPath =   updateTargetFilename(this.value, keepPrefixCheckbox.checked);
+
+                    copyToClipboard(targetPath); // 复制源文件名到剪贴板
                 });
             }
             // 更现代的剪贴板API方法
@@ -2060,8 +2067,41 @@
                     showCopyNotification();
                 }
             }
+            // 显示复制成功提示
+            function showCopyNotification() {
+                // 检查是否已有通知元素
+                let notification = document.getElementById('copyNotification');
+
+                if (!notification) {
+                    // 创建通知元素
+                    notification = document.createElement('div');
+                    notification.id = 'copyNotification';
+                    notification.style.position = 'fixed';
+                    notification.style.bottom = '20px';
+                    notification.style.right = '20px';
+                    notification.style.padding = '10px 15px';
+                    notification.style.backgroundColor = '#4CAF50';
+                    notification.style.color = 'white';
+                    notification.style.borderRadius = '4px';
+                    notification.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
+                    notification.style.opacity = '0';
+                    // index 1000
+                    notification.style.zIndex = '10000';
+                    notification.style.transition = 'opacity 0.3s';
+                    notification.textContent = '已复制到剪贴板';
+                    document.body.appendChild(notification);
+                }
+
+                // 显示通知
+                notification.style.opacity = '1';
+
+                // 3秒后隐藏通知
+                setTimeout(() => {
+                    notification.style.opacity = '0';
+                }, 3000);
+            }
             // 更新目标文件名
-            function updateTargetFilename(sourceName) {
+            function updateTargetFilename(sourceName,keepPrefix) {
                 if (!sourceName) {
                     targetFilenameInput.value = '';
                     return;
@@ -2071,12 +2111,14 @@
                 const fileName = sourceName.trim();
                 let baseName = fileName.replace(/\.[^/.]+$/, '');
 
-                // 移除开头的序号和点
-                baseName = baseName.replace(/^\d+[-\s]*\.\s*/, '');
-
+                // 根据选项决定是否移除开头的序号和点
+                if (!keepPrefix) {
+                    baseName = baseName.replace(/^\d+[-\s]*\.\s*/, '');
+                }
                 // 构建目标路径
                 const targetPath = `D:\\download\\${baseName}.ts`;
                 targetFilenameInput.value = targetPath;
+                return targetPath;
             }
 
             // 执行重命名按钮事件
