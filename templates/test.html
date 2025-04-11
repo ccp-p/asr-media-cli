@@ -2032,9 +2032,34 @@
             if (sourceFilenameInput) {
                 sourceFilenameInput.addEventListener('input', function () {
                     updateTargetFilename(this.value);
+                    copyToClipboard(this.value); // 复制源文件名到剪贴板
                 });
             }
-
+            // 更现代的剪贴板API方法
+            function copyToClipboard(text) {
+                // 检查浏览器是否支持Clipboard API
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text)
+                        .then(() => {
+                            showCopyNotification();
+                        })
+                        .catch(err => {
+                            console.error('复制失败:', err);
+                        });
+                } else {
+                    // 回退到旧方法
+                    const textarea = document.createElement('textarea');
+                    textarea.value = text;
+                    textarea.setAttribute('readonly', '');
+                    textarea.style.position = 'absolute';
+                    textarea.style.left = '-9999px';
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    showCopyNotification();
+                }
+            }
             // 更新目标文件名
             function updateTargetFilename(sourceName) {
                 if (!sourceName) {
