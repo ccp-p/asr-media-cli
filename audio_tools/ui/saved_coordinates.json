@@ -1,0 +1,14 @@
+{
+  "download_button": {
+    "x": 2205,
+    "y": 291
+  },
+  "next_button": {
+    "x": 2362,
+    "y": 236
+  },
+  "rename_button": {
+    "x": 1191,
+    "y": 722
+  }
+}

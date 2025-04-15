@@ -1,224 +1,70 @@
-<script>
-    // 将 fileHandleStorage 对象持久化的解决方案
-let fileHandleStorage = {}; // 存储文件句柄
-
-// 加载本地文件时的处理
-loadLocalBtn.addEventListener('click', async () => {
-    if (selectedLocalFile) {
-        const objectURL = URL.createObjectURL(selectedLocalFile);
-        
-        // 先加载视频文件
-        loadVideo(objectURL, selectedLocalFile.name, 'local');
-        
-        // 如果浏览器支持文件系统访问API，尝试请求持久化权限
-        if ('showOpenFilePicker' in window) {
-            try {
-                // 显示一个选项，让用户决定是否记住文件位置
-                const shouldRequestPermission = confirm('是否允许网页记住这个文件位置？（下次打开可以自动加载）');
-                
-                if (shouldRequestPermission) {
-                    // 生成文件ID
-                    const fileId = generateUniqueFileId(selectedLocalFile.name);
-                    
-                    // 存储文件基本信息（用于自动恢复）
-                    storeFileMetadata(selectedLocalFile, fileId);
-                    
-                    dp.notice('已记住文件位置，刷新页面后会尝试自动恢复', 3000);
-                }
-            } catch (e) {
-                console.log('用户未授予持久访问权限或操作被取消', e);
-            }
+const path = require('path')
+const name = '中国移动公益' // page title
+function resolve(dir) {
+  return path.join(__dirname, dir)
+}
+module.exports = {
+  publicPath: './',
+  outputDir: 'dist',
+  assetsDir: 'static',
+  productionSourceMap: false,
+  //关闭eslint
+    lintOnSave: false,
+  devServer: {
+    // host:'192.168.124.49',
+    // port:8080,
+    proxy: {
+      "/": {
+        // target: "https://gm-test.cmicvip.cn",
+        target: "http://10.3.99.90:18080",
+        changeOrigin: true,
+        pathRewrite: {
+          '^/': ''
         }
-    } else {
-        alert('请先选择一个视频文件');
+      },
     }
-});
+  },
+  // rules:[
+  //   {
+  //     test: /\.scss$/,
+  //     loaders: ["style", "css", "sass"]
+  //   }
+  // ]
+  configureWebpack: {
+    name: name,
 
-// 简化的文件ID生成方法
-function generateUniqueFileId(filename) {
-    // 只使用时间戳，不包含任何文件名信息
-    return 'file_' + Date.now();
-}
-
-// 存储文件元数据
-function storeFileMetadata(file, fileId) {
-    const fileInfo = {
-        id: fileId,
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        lastModified: file.lastModified,
-        timestamp: Date.now(),
-        path: file.webkitRelativePath || ''
-    };
-    
-    // 存储文件元数据
-    localStorage.setItem('lastVideoFileInfo', JSON.stringify(fileInfo));
-    
-    // 同时更新最近视频记录
-    let recentVideos = JSON.parse(localStorage.getItem('recentVideos') || '[]');
-    const index = recentVideos.findIndex(v => v.name === file.name && v.type === 'local');
-    
-    if (index !== -1) {
-        recentVideos[index].fileInfo = fileInfo;
-        localStorage.setItem('recentVideos', JSON.stringify(recentVideos));
-    }
-}
-
-// 在页面加载时尝试恢复上次的本地视频
-async function tryRestoreLastLocalVideo() {
-    // 检查浏览器支持
-    if (!('showOpenFilePicker' in window)) {
-        console.log('本浏览器不支持文件系统访问API');
-        return false;
-    }
-    
-    try {
-        // 获取上次保存的文件信息
-        const fileInfoJson = localStorage.getItem('lastVideoFileInfo');
-        if (!fileInfoJson) return false;
-        
-        const fileInfo = JSON.parse(fileInfoJson);
-        console.log('尝试恢复上次的本地视频:', fileInfo.name);
-        
-        // 提示用户
-        const shouldRestore = confirm(`是否恢复上次播放的本地视频: ${fileInfo.name}?`);
-        if (!shouldRestore) return false;
-        
-        // 使用文件选择器，尝试定位到上次的文件
-        const opts = {
-            id: fileInfo.id,
-            startIn: 'downloads',  // 假设视频通常在下载文件夹
-            types: [{
-                description: '视频文件',
-                accept: {'video/*': ['.mp4', '.webm', '.ogg', '.mov']}
-            }]
-        };
-        
-        const [fileHandle] = await window.showOpenFilePicker(opts);
-        const file = await fileHandle.getFile();
-        
-        // 验证是否是相同/相似的文件
-        const isSimilarFile = file.name === fileInfo.name || 
-                             (file.size === fileInfo.size && 
-                              file.type === fileInfo.type);
-        
-        if (isSimilarFile) {
-            console.log('成功恢复文件:', file.name);
-            
-            // 加载视频
-            const objectURL = URL.createObjectURL(file);
-            loadVideo(objectURL, file.name, 'local');
-            
-            // 保存句柄到内存中
-            fileHandleStorage[fileInfo.id] = fileHandle;
-            
-            dp.notice(`已自动恢复上次的本地视频: ${file.name}`, 3000);
-            return true;
-        } else {
-            console.log('找到的文件与记录不匹配');
-            return false;
-        }
-    } catch (e) {
-        console.log('恢复本地视频失败:', e);
-        return false;
-    }
-}
-
-// 在页面加载完成后尝试恢复
-document.addEventListener('DOMContentLoaded', async function() {
-    // 加载字幕映射等信息
-    const savedSubtitleMappings = localStorage.getItem('subtitleMappings');
-    if (savedSubtitleMappings) {
-        try {
-            subtitleMappings = JSON.parse(savedSubtitleMappings);
-        } catch (e) {
-            console.error('无法解析保存的字幕映射', e);
-            subtitleMappings = {};
-        }
-    }
-    
-    // 尝试恢复上次的本地视频
-    const restored = await tryRestoreLastLocalVideo();
-    
-    // 加载最近视频列表
-    loadRecentVideos();
-    
-    // 如果没有成功恢复视频，则显示选择面板
-    if (!restored && (!videoPath || videoPath === './第八章event.mp4')) {
-        setTimeout(() => {
-            sourcePanel.style.display = 'flex';
-        }, 500);
-    } else {
-        sourcePanel.style.display = 'none';
-    }
-});
-
-// 点击历史记录中的本地视频项时
-function handleLocalVideoHistoryClick(video) {
-    if (video.fileInfo) {
-        // 提示用户
-        const shouldRestore = confirm(`是否尝试加载本地视频: ${video.name}?`);
-        if (!shouldRestore) return;
-        
-        // 尝试通过文件信息恢复
-        tryRestoreVideoByInfo(video.fileInfo).then(success => {
-            if (!success) {
-                // 如果无法恢复，提示用户选择文件
-                alert(`无法自动恢复，请重新选择本地文件: ${video.name}`);
-                sourceTabs[0].click();
-                setTimeout(() => {
-                    if (localFileInput) localFileInput.click();
-                }, 500);
-            }
-        });
-    } else {
-        // 如果没有文件信息，直接提示选择
-        alert(`请重新选择本地文件: ${video.name}`);
-        sourceTabs[0].click();
-        setTimeout(() => {
-            if (localFileInput) localFileInput.click();
-        }, 500);
-    }
-}
-
-// 尝试通过文件信息恢复视频
-async function tryRestoreVideoByInfo(fileInfo) {
-    if (!('showOpenFilePicker' in window)) return false;
-    
-    try {
-        const opts = {
-            id: fileInfo.id,
-            startIn: 'downloads',
-            types: [{
-                description: '视频文件',
-                accept: {'video/*': ['.mp4', '.webm', '.ogg', '.mov']}
-            }]
-        };
-        
-        const [fileHandle] = await window.showOpenFilePicker(opts);
-        const file = await fileHandle.getFile();
-        
-        // 验证是否是相同/相似的文件
-        const isSimilarFile = file.name === fileInfo.name || 
-                             (file.size === fileInfo.size && 
-                              file.type === fileInfo.type);
-        
-        if (isSimilarFile) {
-            // 加载视频
-            const objectURL = URL.createObjectURL(file);
-            loadVideo(objectURL, file.name, 'local');
-            
-            // 保存句柄到内存中
-            fileHandleStorage[fileInfo.id] = fileHandle;
-            
-            sourcePanel.style.display = 'none';
-            return true;
-        }
-        return false;
-    } catch (e) {
-        console.log('恢复视频失败:', e);
-        return false;
-    }
-}
-</script>
+  },
+  chainWebpack(config) {
+    config.module
+      .rule('svg')
+      .exclude.add(resolve('src/icons'))
+      .end()
+    config.module
+      .rule('icons')
+      .test(/\.svg$/)
+      .include.add(resolve('src/icons'))
+      .end()
+      .use('svg-sprite-loader')
+      .loader('svg-sprite-loader')
+      .options({
+        symbolId: 'icon-[name]'
+      })
+      .end()
+    // config.rules=[
+    //   {
+    //     test: /\.s[ac]ss$/i,
+    //     use: [
+    //       // Creates `style` nodes from JS strings
+    //       "style-loader",
+    //       // Translates CSS into CommonJS
+    //       "css-loader",
+    //       // Compiles Sass to CSS
+    //       "sass-loader",
+    //     ],
+    //   },
+    // ]
+    // .test(/\.scss$/)
+    // .loader("style", "css", "sass")
+    // .end()
+  }
+};
