@@ -154,7 +154,7 @@ class AutoDownloadGUI:
                     pyautogui.moveTo(download_btn_pos)
                     pyautogui.click()
                     self.root.after(0, self.status_var.set, "已点击下载按钮")
-                    time.sleep(PAUSE_BETWEEN_ACTIONS + 2)
+                    time.sleep(PAUSE_BETWEEN_ACTIONS)
 
                     # 移动到屏幕中央并点击
                     rename_btn_pos = wait_and_locate(
@@ -172,7 +172,7 @@ class AutoDownloadGUI:
 
                     # 2. IDM快捷键
                     self.root.after(0, self.status_var.set, "按下Alt+S键进行下载")
-                    pyautogui.hotkey('alt', 's')
+                    pyautogui.hotkey('alt', 'l')
                     time.sleep(PAUSE_BETWEEN_ACTIONS)
                     
                     # 3. 定位并点击下一项按钮
