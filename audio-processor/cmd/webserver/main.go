@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // spaHandler 结构用于处理单页应用路由
@@ -35,18 +36,29 @@ func (h spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	http.FileServer(http.Dir(h.staticPath)).ServeHTTP(w, r)
 }
 
-// apiHandler 处理所有 /api/ 请求的占位符
 func apiHandler(w http.ResponseWriter, r *http.Request) {
-	// 打印接收到的 API 请求路径
-	log.Printf("接收到 API 请求: %s %s", r.Method, r.URL.Path)
+    // 打印接收到的 API 请求路径
+    log.Printf("接收到 API 请求: %s %s", r.Method, r.URL.Path)
 
-	// TODO: 在这里实现你的 API 逻辑
-	// 例如：解析请求、调用服务、返回 JSON 响应等
+    // 移除 /api/ 前缀，方便匹配
+    trimmedPath := strings.TrimPrefix(r.URL.Path, "/api/")
 
-	// 简单的占位符响应
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"message": "API 请求已收到，但尚未实现"}`))
+    // 根据路径分发到不同的处理器
+    switch {
+    case trimmedPath == "generate_note":
+        handleGenerateNote(w, r)
+    case trimmedPath == "delete_task":
+        handleDeleteTask(w, r)
+    // 注意：task_status 后面可能跟着 task_id
+    case strings.HasPrefix(trimmedPath, "task_status/"):
+        handleGetTaskStatus(w, r)
+    case trimmedPath == "image_proxy":
+        handleImageProxy(w, r)
+    default:
+        // 如果没有匹配的 API 路径，返回 404
+        http.NotFound(w, r)
+        log.Printf("未找到 API 处理器: %s", r.URL.Path)
+    }
 }
 
 func main() {
