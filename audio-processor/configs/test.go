@@ -335,6 +335,9 @@ func loadConfig() *models.Config {
 			if config.ExportSRT {
 				utils.Info("已启用SRT字幕导出功能")
 			}
+			if config.ExportJSON{
+				utils.Info("已启用JSON字幕导出功能")
+			}
 		}
 	} else {
 		color.Yellow("未指定配置文件，使用默认配置")

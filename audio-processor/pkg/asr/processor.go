@@ -17,6 +17,7 @@ import (
 type ASRProcessor struct {
 	Config      *models.Config
 	SRTExporter *export.SRTExporter
+	JSONExporter *export.JSONExporter
 }
 // ProgressCallback 是进度回调函数，用于通知识别过程的进度
 type ProgressCallback func(percent int, message string)
@@ -32,6 +33,7 @@ func NewASRProcessor(config *models.Config) *ASRProcessor {
 	return &ASRProcessor{
 		Config:      config,
 		SRTExporter: export.NewSRTExporter(config.OutputFolder),
+		JSONExporter: export.NewJSONExporter(config.OutputFolder),
 	}
 }
 
@@ -53,6 +55,15 @@ func (p *ASRProcessor) ProcessResults(ctx context.Context, segments []models.Dat
 			utils.Warn("导出SRT字幕失败: %v", err)
 		} else {
 			outputFiles["srt"] = srtPath
+		}
+	}
+	// 3、 如果配置指定，生成JSON格式的文本文件
+	if p.Config.ExportJSON && len(segments) > 0 {
+		jsonPath, err := p.JSONExporter.ExportJSON(segments, audioPath, partNum)
+		if err != nil {
+			utils.Warn("导出JSON文件失败: %v", err)
+		} else {
+			outputFiles["json"] = jsonPath
 		}
 	}
 	
