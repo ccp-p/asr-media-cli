@@ -20,7 +20,7 @@ func main() {
 	logLevel := flag.String("log-level", utils.LogLevelNormal, "日志级别")
 	logFile := flag.String("log-file", "", "日志文件路径")
 	exportSRT := flag.Bool("export-srt", true, "是否导出SRT字幕文件")
-	
+	exportJSON:= flag.Bool("export-json", true, "是否导出JSON文件")
 	flag.Parse()
 	
 	// 初始化日志

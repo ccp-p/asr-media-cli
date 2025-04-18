@@ -33,6 +33,7 @@ type Config struct {
     LogFile           string  `json:"log_file"`            // 日志文件
     MaxPartTime       int     `json:"max_part_time"`       // 最大部分时间（分钟）
     ExportSRT         bool    `json:"export_srt"`          // 是否导出SRT字幕文件
+    ExportJSON       bool    `json:"export_json"`         // 是否导出JSON格式的文本
     // asr-service
     ASRService string `json:"asr_service"` // ASR服务名称 ASR服务选择 (kuaishou, bcut, auto)
 }
@@ -75,6 +76,7 @@ func NewDefaultConfig() *Config {
         MaxPartTime:       20,
         ExportSRT:         true,
         ASRService:       "auto",
+        ExportJSON: true,
     }
 }
 
