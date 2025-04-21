@@ -59,48 +59,66 @@ func NewBcutASR(audioPath string, useCache bool) (ASRService, error) {
 
 // GetResult 实现ASRService接口
 func (b *BcutASR) GetResult(ctx context.Context, callback ProgressCallback) ([]models.DataSegment, error) {
+	// 为此调用生成唯一ID，假设 utils.GenerateRandomString 存在
+	instanceID := fmt.Sprintf("BcutASR-%s", utils.GenerateRandomString(8)) 
+	utils.Info("[%s] GetResult 开始处理音频: %s", instanceID, b.AudioPath)
+
 	// 检查是否有缓存
 	cacheKey := b.GetCacheKey("BcutASR")
 	if b.UseCache {
 		if segments, ok := b.LoadFromCache("./cache", cacheKey); ok {
-			utils.Info("从缓存加载必剪ASR结果")
+			utils.Info("[%s] 从缓存加载必剪ASR结果", instanceID)
+			// 确保即使从缓存加载也调用最终回调
+			if callback != nil {
+				callback(100, "识别完成 (缓存)")
+			}
+			utils.Info("[%s] GetResult 完成 (来自缓存)", instanceID)
 			return segments, nil
 		}
+		utils.Info("[%s] 缓存未命中", instanceID)
 	}
 
 	// 显示进度
 	if callback != nil {
 		callback(20, "正在上传...")
 	}
-
+	utils.Info("[%s] 开始上传...", instanceID)
 	// 上传文件
 	if err := b.upload(); err != nil {
+		utils.Error("[%s] 上传失败: %v", instanceID, err)
 		return nil, fmt.Errorf("必剪ASR上传失败: %w", err)
 	}
+	utils.Info("[%s] 上传完成", instanceID)
 
 	// 显示进度
 	if callback != nil {
 		callback(50, "提交任务...")
 	}
-
+	utils.Info("[%s] 开始创建任务...", instanceID)
 	// 创建任务
 	if err := b.createTask(); err != nil {
+		utils.Error("[%s] 创建任务失败: %v", instanceID, err)
 		return nil, fmt.Errorf("必剪ASR创建任务失败: %w", err)
 	}
+	utils.Info("[%s] 创建任务完成, TaskID: %s", instanceID, b.taskID)
 
 	// 显示进度
 	if callback != nil {
 		callback(60, "等待结果...")
 	}
-
+	utils.Info("[%s] 开始查询结果...", instanceID)
 	// 查询结果
 	result, err := b.queryResult(ctx, callback)
 	if err != nil {
+		utils.Error("[%s] 查询结果失败: %v", instanceID, err)
 		return nil, fmt.Errorf("必剪ASR查询结果失败: %w", err)
 	}
+	utils.Info("[%s] 查询结果成功", instanceID)
 
 	// 处理结果
+	utils.Info("[%s] 开始处理结果...", instanceID)
 	segments := b.makeSegments(result)
+	utils.Info("[%s] 处理结果完成, 共 %d 段", instanceID, len(segments))
 
 	// 显示进度
 	if callback != nil {
@@ -109,11 +127,15 @@ func (b *BcutASR) GetResult(ctx context.Context, callback ProgressCallback) ([]m
 
 	// 缓存结果
 	if b.UseCache && len(segments) > 0 {
+		utils.Info("[%s] 开始缓存结果...", instanceID)
 		if err := b.SaveToCache("./cache", cacheKey, segments); err != nil {
-			utils.Warn("保存必剪ASR结果到缓存失败: %v", err)
+			utils.Warn("[%s] 保存必剪ASR结果到缓存失败: %v", instanceID, err)
+		} else {
+			utils.Info("[%s] 缓存结果成功", instanceID)
 		}
 	}
 
+	utils.Info("[%s] GetResult 完成", instanceID)
 	return segments, nil
 }
 

@@ -220,6 +220,11 @@ func (m *FolderMonitor) handleFileEvent(event fsnotify.Event) {
 
 	// 创建新的定时器
 	m.pendingFiles[filePath] = time.AfterFunc(m.debounceTime, func() {
+		// 增加对 MP3 文件的额外延迟，确保 FFmpeg 写入完成
+		if strings.ToLower(filepath.Ext(filePath)) == ".mp3" {
+			utils.Debug("检测到 MP3 文件，增加额外延迟: %s", filePath)
+			time.Sleep(5 * time.Second) // 额外等待 5 秒
+		}
 		m.processFile(filePath)
 	})
 
@@ -372,7 +377,6 @@ func (h *FileMovementHandler) moveFile(sourcePath string) {
 		newFilename := fmt.Sprintf("%s_%s%s", name, timestamp, ext)
 		targetPath = filepath.Join(h.targetFolder, newFilename)
 	}
-
 	// 移动文件
 	if err := os.Rename(sourcePath, targetPath); err != nil {
 		utils.Error("移动文件失败 %s -> %s: %v", sourcePath, targetPath, err)

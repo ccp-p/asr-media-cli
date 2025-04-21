@@ -3,6 +3,7 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 )
@@ -110,4 +111,13 @@ func GetFloat64Value(m map[string]interface{}, key string, defaultVal float64) f
         }
     }
     return defaultVal
+}
+// GenerateRandomString
+func GenerateRandomString(length int) string {
+    const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    result := make([]byte, length)
+    for i := range result {
+        result[i] = charset[rand.Intn(len(charset))]
+    }
+    return string(result)
 }
