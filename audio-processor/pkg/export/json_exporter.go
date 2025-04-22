@@ -103,6 +103,30 @@ func (e *JSONExporter) ExportJSON(segments []models.DataSegment, filename string
         outputFile = filepath.Join(e.OutputFolder, fmt.Sprintf("%s_json.txt", baseName))
     }
     
+    // 检查是否为空结果
+    if len(segments) == 0 {
+        utils.Warn("没有文本段落可导出JSON: %s", filename)
+        // 创建一个空结果
+        emptyContent := TranscriptResult{
+            Language: "unknown",
+            FullText: "",
+            Segments: []TranscriptSegment{},
+        }
+        
+        jsonData, err := json.MarshalIndent(emptyContent, "", "  ")
+        if err != nil {
+            return "", fmt.Errorf("JSON编码失败: %w", err)
+        }
+        
+        // 写入文件
+        if err := os.WriteFile(outputFile, jsonData, 0644); err != nil {
+            return "", fmt.Errorf("写入JSON文件失败: %w", err)
+        }
+        
+        utils.Info("已导出空JSON文件: %s", outputFile)
+        return outputFile, nil
+    }
+    
     // 生成JSON内容
     jsonContent := e.GenerateJSONContent(segments)
     

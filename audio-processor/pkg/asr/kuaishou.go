@@ -43,28 +43,38 @@ type KuaiShouResponse struct {
 
 // GetResult 实现ASRService接口
 func (k *KuaiShouASR) GetResult(ctx context.Context, callback ProgressCallback) ([]models.DataSegment, error) {
+	instanceID := fmt.Sprintf("KuaiShouASR-%s", utils.GenerateRandomString(6))
+	utils.Info("[%s] 开始处理音频: %s", instanceID, k.AudioPath)
+
 	// 检查是否有缓存
 	cacheKey := k.GetCacheKey("KuaiShouASR")
 	if k.UseCache {
 		if segments, ok := k.LoadFromCache("./cache", cacheKey); ok {
-			utils.Info("从缓存加载快手ASR结果")
+			utils.Info("[%s] 从缓存加载快手ASR结果", instanceID)
+			if callback != nil {
+				callback(100, "识别完成 (缓存)")
+			}
 			return segments, nil
 		}
 	}
 
 	// 显示进度
 	if callback != nil {
-		callback(50, "正在识别...")
+		callback(30, "提交请求中...")
 	}
+	utils.Info("[%s] 提交识别请求...", instanceID)
 
 	// 提交识别请求
 	result, err := k.submit(ctx)
 	if err != nil {
+		utils.Error("[%s] 请求失败: %v", instanceID, err)
 		return nil, fmt.Errorf("快手ASR请求失败: %w", err)
 	}
 
 	// 处理结果
+	utils.Info("[%s] 处理识别结果...", instanceID)
 	segments := k.makeSegments(result)
+	utils.Info("[%s] 处理完成, 获取 %d 段文本", instanceID, len(segments))
 
 	// 显示进度
 	if callback != nil {
@@ -72,9 +82,11 @@ func (k *KuaiShouASR) GetResult(ctx context.Context, callback ProgressCallback) 
 	}
 
 	// 缓存结果
-	if k.UseCache {
+	if k.UseCache && len(segments) > 0 {
 		if err := k.SaveToCache("./cache", cacheKey, segments); err != nil {
-			utils.Warn("保存快手ASR结果到缓存失败: %v", err)
+			utils.Warn("[%s] 保存快手ASR结果到缓存失败: %v", instanceID, err)
+		} else {
+			utils.Info("[%s] 结果已缓存", instanceID)
 		}
 	}
 

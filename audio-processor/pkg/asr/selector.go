@@ -194,6 +194,10 @@ func (s *ASRSelector) RunWithService(ctx context.Context, audioPath string, serv
 	var creator ServiceCreator
 	var ok bool
 	
+	// 创建一个带有唯一ID的日志前缀
+	requestID := fmt.Sprintf("ASRREQ-%s", utils.GenerateRandomString(6))
+	utils.Info("[%s] 开始处理ASR请求: %s, 服务: %s", requestID, audioPath, serviceName)
+	
 	if serviceName == "auto" {
 		// 自动选择服务
 		selectedName, creator, ok = s.SelectService("weighted_random")
@@ -212,27 +216,51 @@ func (s *ASRSelector) RunWithService(ctx context.Context, audioPath string, serv
 		selectedName = serviceName
 	}
 
+	utils.Info("[%s] 选择ASR服务: %s", requestID, selectedName)
+
 	// 创建服务实例
 	service, err = creator(audioPath, useCache)
 	if err != nil {
+		utils.Error("[%s] 创建ASR服务失败: %v", requestID, err)
 		return nil, selectedName, nil, fmt.Errorf("创建ASR服务失败: %w", err)
 	}
 
+	// 包装进度回调以添加请求ID
+	wrappedCallback := func(percent int, message string) {
+		if callback != nil {
+			utils.Debug("[%s] 进度更新: %d%%, %s", requestID, percent, message)
+			callback(percent, message)
+		}
+	}
+
 	// 执行识别
-	segments, err := service.GetResult(ctx, callback)
+	utils.Info("[%s] 开始执行ASR识别...", requestID)
+	segments, err := service.GetResult(ctx, wrappedCallback)
 	
 	// 报告结果
-	s.ReportResult(selectedName, err == nil && len(segments) > 0)
+	success := err == nil && len(segments) > 0
+	s.ReportResult(selectedName, success)
+	
+	if err != nil {
+		utils.Error("[%s] ASR识别失败: %v", requestID, err)
+		return nil, selectedName, nil, err
+	}
+	
+	utils.Info("[%s] ASR识别完成，获取 %d 段文本", requestID, len(segments))
 	
 	// 处理识别结果
 	var outputFiles map[string]string
-	if err == nil && len(segments) > 0 && config != nil {
+	if len(segments) > 0 && config != nil {
 		// 初始化ASR处理器
 		processor := NewASRProcessor(config)
 		outputFiles, err = processor.ProcessResults(ctx, segments, audioPath, nil)
 		if err != nil {
-			utils.Warn("处理ASR结果失败: %v", err)
+			utils.Warn("[%s] 处理ASR结果失败: %v", requestID, err)
+		} else {
+			utils.Info("[%s] ASR结果处理完成，生成文件: %v", requestID, outputFiles)
 		}
+	} else if len(segments) == 0 {
+		utils.Warn("[%s] ASR识别结果为空", requestID)
 	}
 	
 	return segments, selectedName, outputFiles, err

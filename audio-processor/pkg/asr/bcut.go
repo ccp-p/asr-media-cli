@@ -391,12 +391,18 @@ func (b *BcutASR) createTask() error {
 
 // queryResult 查询结果
 func (b *BcutASR) queryResult(ctx context.Context, callback ProgressCallback) (map[string]interface{}, error) {
-	client := &http.Client{}
+	client := &http.Client{
+		Timeout: time.Second * 30, // 设置HTTP请求超时
+	}
+	
+	instanceID := utils.GenerateRandomString(6)
+	utils.Info("[BcutASR-%s] 开始轮询查询任务: %s", instanceID, b.taskID)
 	
 	// 轮询检查任务状态
 	for i := 0; i < 500; i++ {
 		select {
 		case <-ctx.Done():
+			utils.Info("[BcutASR-%s] 上下文取消，停止查询", instanceID)
 			return nil, ctx.Err()
 		default:
 			// 继续执行
@@ -413,50 +419,83 @@ func (b *BcutASR) queryResult(ctx context.Context, callback ProgressCallback) (m
 
 		resp, err := client.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("发送HTTP请求失败: %w", err)
+			utils.Warn("[BcutASR-%s] 第 %d 次查询请求失败: %v，将重试", instanceID, i, err)
+			time.Sleep(time.Second * 2)
+			continue
 		}
 
 		body, err := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
 		
 		if err != nil {
-			return nil, fmt.Errorf("读取响应失败: %w", err)
+			utils.Warn("[BcutASR-%s] 第 %d 次查询读取响应失败: %v，将重试", instanceID, i, err)
+			time.Sleep(time.Second * 2)
+			continue
 		}
 
 		var result map[string]interface{}
 		if err := json.Unmarshal(body, &result); err != nil {
-			return nil, fmt.Errorf("解析JSON响应失败: %w", err)
+			utils.Warn("[BcutASR-%s] 第 %d 次查询JSON解析失败: %v，将重试", instanceID, i, err)
+			time.Sleep(time.Second * 2)
+			continue
 		}
 
 		// 提取任务状态
 		data, ok := result["data"].(map[string]interface{})
 		if !ok {
-			return nil, fmt.Errorf("响应格式错误")
+			utils.Warn("[BcutASR-%s] 第 %d 次查询响应格式错误，将重试", instanceID, i)
+			time.Sleep(time.Second * 2)
+			continue
 		}
 
-		state, _ := data["state"].(float64)
+		state, ok := data["state"].(float64)
+		if !ok {
+			utils.Warn("[BcutASR-%s] 第 %d 次查询状态字段缺失，将重试", instanceID, i)
+			time.Sleep(time.Second * 2)
+			continue
+		}
+		
+		utils.Debug("[BcutASR-%s] 第 %d 次查询，任务状态: %v", instanceID, i, state)
+
 		if state == 4 { // 任务完成
-			resultStr, _ := data["result"].(string)
+			resultStr, ok := data["result"].(string)
+			if !ok || resultStr == "" {
+				utils.Warn("[BcutASR-%s] 任务完成但结果为空", instanceID)
+				return nil, fmt.Errorf("任务完成但结果为空")
+			}
+
 			var resultData map[string]interface{}
 			if err := json.Unmarshal([]byte(resultStr), &resultData); err != nil {
 				return nil, fmt.Errorf("解析结果失败: %w", err)
 			}
+			utils.Info("[BcutASR-%s] 任务结果查询成功，第 %d 次查询", instanceID, i)
 			return resultData, nil
+		} else if state == 3 { // 任务失败
+			utils.Error("[BcutASR-%s] 任务处理失败，状态码: %v", instanceID, state)
+			return nil, fmt.Errorf("任务处理失败，状态: %v", state)
 		}
 
 		// 更新进度
-		if callback != nil && i%10 == 0 {
+		if callback != nil && i%5 == 0 {
 			progress := 60 + int(float64(i)/500.0*39)
 			if progress > 99 {
 				progress = 99
 			}
-			callback(progress, fmt.Sprintf("处理中 %d/500...", i))
+			callback(progress, fmt.Sprintf("处理中 %d%%...", progress))
 		}
 
-		// 等待一秒后再次查询
-		time.Sleep(time.Second)
+		// 等待一段时间后再次查询，随着尝试次数增加，增加等待时间
+		sleepDuration := time.Second
+		if i > 20 {
+			sleepDuration = time.Second * 2
+		}
+		if i > 50 {
+			sleepDuration = time.Second * 3
+		}
+		time.Sleep(sleepDuration)
 	}
 
+	utils.Error("[BcutASR-%s] 查询超时，500次尝试后仍未完成", instanceID)
 	return nil, fmt.Errorf("任务超时未完成")
 }
 
