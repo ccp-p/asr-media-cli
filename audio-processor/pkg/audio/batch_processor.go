@@ -518,7 +518,7 @@ func (p *BatchProcessor) extractAudioFromFile(filePath string) BatchResult {
 		if p.ProgressManager != nil {
 			p.ProgressManager.UpdateProgressBar("file_"+fileID, 80, "音频提取完成")
 		}
-	} else if ext == ".mp3" || ext == ".wav" {
+	} else if ext == ".mp3" || ext == ".wav" || ext == ".m4a" {
 		// 直接使用音频文件
 		audioPath = filePath
 
