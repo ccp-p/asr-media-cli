@@ -126,30 +126,54 @@ func (k *KuaiShouASR) submit(ctx context.Context) (*KuaiShouResponse, error) {
 		return nil, fmt.Errorf("创建HTTP请求失败: %w", err)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+	req.Header.Set("Accept", "application/json, text/plain, */*")
 
 	// 发送请求
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		utils.Error("快手ASR请求发送失败: %v", err)
-		return &KuaiShouResponse{}, nil
+		return &KuaiShouResponse{}, fmt.Errorf("发送HTTP请求失败: %w", err)
 	}
 	defer resp.Body.Close()
+
+	// 检查HTTP状态码
+	if resp.StatusCode != http.StatusOK {
+		utils.Error("快手ASR请求返回非200状态码: %d", resp.StatusCode)
+		return &KuaiShouResponse{}, fmt.Errorf("HTTP请求返回错误状态码: %d", resp.StatusCode)
+	}
 
 	// 读取响应
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		utils.Error("读取响应失败: %v", err)
-		return &KuaiShouResponse{}, nil
+		return &KuaiShouResponse{}, fmt.Errorf("读取响应内容失败: %w", err)
+	}
+
+	// 输出原始响应用于调试
+	utils.Debug("快手ASR原始响应: %s", string(body))
+
+	// 检查响应是否为空
+	if len(body) == 0 {
+		utils.Error("快手ASR返回空响应")
+		return &KuaiShouResponse{}, fmt.Errorf("接收到空响应")
 	}
 
 	// 解析JSON
 	var result KuaiShouResponse
 	if err := json.Unmarshal(body, &result); err != nil {
-		utils.Error("解析响应JSON失败: %v", err)
-		return &KuaiShouResponse{}, nil
+		utils.Error("解析响应JSON失败: %v, 原始数据: %s", err, string(body))
+		return &KuaiShouResponse{}, fmt.Errorf("解析JSON响应失败: %w", err)
 	}
 
+	// 检查解析后的结果
+	if result.Data.Text == nil {
+		utils.Error("快手ASR响应中没有文本数据")
+		return &KuaiShouResponse{}, fmt.Errorf("响应中没有文本数据")
+	}
+
+	utils.Info("成功解析快手ASR响应，文本段落数量: %d", len(result.Data.Text))
 	return &result, nil
 }
 
@@ -157,15 +181,37 @@ func (k *KuaiShouASR) submit(ctx context.Context) (*KuaiShouResponse, error) {
 func (k *KuaiShouASR) makeSegments(resp *KuaiShouResponse) []models.DataSegment {
 	var segments []models.DataSegment
 
-	// 安全处理响应
-	if resp != nil && resp.Data.Text != nil {
-		for _, item := range resp.Data.Text {
-			segments = append(segments, models.DataSegment{
-				Text:      item.Text,
-				StartTime: item.StartTime,
-				EndTime:   item.EndTime,
-			})
+	// 安全检查
+	if resp == nil {
+		utils.Error("快手ASR响应为空")
+		return segments
+	}
+
+	// 检查文本数组
+	if resp.Data.Text == nil {
+		utils.Error("快手ASR响应中文本数组为空")
+		return segments
+	}
+
+	// 提取文本段落
+	for _, item := range resp.Data.Text {
+		// 跳过空文本
+		if item.Text == "" {
+			continue
 		}
+		
+		segments = append(segments, models.DataSegment{
+			Text:      item.Text,
+			StartTime: item.StartTime,
+			EndTime:   item.EndTime,
+		})
+	}
+
+	// 检查结果
+	if len(segments) == 0 {
+		utils.Warn("快手ASR没有识别出任何文本段落")
+	} else {
+		utils.Info("成功从快手ASR提取 %d 个文本段落", len(segments))
 	}
 
 	return segments

@@ -388,7 +388,16 @@ func (p *BatchProcessor) performASROnAudio(result *BatchResult) error {
 		p.ProgressManager.UpdateProgressBar("file_"+fileID, 85, "执行语音识别...")
 	}
 
-	utils.Info("开始对文件进行语音识别: %s", filepath.Base(audioPath))
+	utils.Info("开始对文件进行语音识别: %s (路径: %s)", filepath.Base(audioPath), audioPath)
+
+	// 检查文件是否存在
+	if _, err := os.Stat(audioPath); os.IsNotExist(err) {
+		utils.Error("音频文件不存在: %s", audioPath)
+		if p.ProgressManager != nil {
+			p.ProgressManager.CompleteProgressBar("file_"+fileID, "失败：文件不存在")
+		}
+		return fmt.Errorf("音频文件不存在: %s", audioPath)
+	}
 
 	// 创建进度条ID
 	barID := "asr_" + filepath.Base(audioPath)
@@ -397,13 +406,15 @@ func (p *BatchProcessor) performASROnAudio(result *BatchResult) error {
 	// 进度回调
 	progressCallback := func(percent int, message string) {
 		p.ProgressManager.UpdateProgressBar(barID, percent, message)
+		utils.Debug("ASR进度 [%d%%]: %s", percent, message)
 	}
 
 	// 创建上下文
-	ctx, cancel := context.WithTimeout(p.ctx, 10*time.Minute)
+	ctx, cancel := context.WithTimeout(p.ctx, 15*time.Minute) // 增加超时时间
 	defer cancel()
 
 	// 执行ASR识别
+	utils.Info("使用ASR服务: %s", p.config.ASRService)
 	segments, _, outputFiles, err := p.ASRSelector.RunWithService(
 		ctx,
 		audioPath,
@@ -414,11 +425,22 @@ func (p *BatchProcessor) performASROnAudio(result *BatchResult) error {
 	)
 
 	if err != nil {
-		p.ProgressManager.CompleteProgressBar(barID, "识别失败")
-
-		return fmt.Errorf("ASR识别失败: %w", err)
+		utils.Error("ASR识别失败: %v", err)
+		p.ProgressManager.CompleteProgressBar(barID, "识别失败: "+err.Error())
+		
+		// 即使识别失败，我们也标记文件为已处理，避免反复处理
+		result.Success = true
+		result.Error = err
+		return err
 	}
-	p.ProgressManager.CompleteProgressBar(barID, "识别完成")
+
+	// 检查识别结果
+	if len(segments) == 0 {
+		utils.Warn("ASR识别未返回任何文本段落，可能是音频中没有语音内容或识别失败")
+		p.ProgressManager.CompleteProgressBar(barID, "识别完成但未找到文本")
+	} else {
+		p.ProgressManager.CompleteProgressBar(barID, "识别成功，共"+fmt.Sprintf("%d", len(segments))+"段文本")
+	}
 
 	// 输出结果信息
 	if len(outputFiles) > 0 {
@@ -426,6 +448,8 @@ func (p *BatchProcessor) performASROnAudio(result *BatchResult) error {
 		for fileType, filePath := range outputFiles {
 			utils.Info("- %s: %s", fileType, filepath.Base(filePath))
 		}
+	} else {
+		utils.Warn("未生成任何输出文件")
 	}
 
 	utils.Info("文件 %s 识别完成，共 %d 段文本", filepath.Base(audioPath), len(segments))
