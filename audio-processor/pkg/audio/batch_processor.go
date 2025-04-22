@@ -366,7 +366,7 @@ func (p *BatchProcessor) processSingleFile(filePath string) BatchResult {
 	result := p.extractAudioFromFile(filePath)
 
 	// 如果音频提取成功且需要执行ASR处理
-	if result.Success && p.config != nil && p.config.ExportSRT {
+	if result.Success  {
 		p.performASROnAudio(&result)
 	}
 
