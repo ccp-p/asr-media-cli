@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -178,10 +179,25 @@ func Warn(format string, args ...interface{}) {
 // Error 输出错误日志
 func Error(format string, args ...interface{}) {
 	if Log != nil {
-		if len(args) > 0 {
-			Log.Errorf(format, args...)
+		// 添加调用堆栈信息以便于调试
+		if len(args) > 0 && strings.Contains(format, "%v") {
+			for i, arg := range args {
+				if err, ok := arg.(error); ok {
+					// 如果是错误类型，尝试提供更多详细信息
+					args[i] = fmt.Sprintf("%v [%T]", err, err)
+				}
+			}
+			if len(args) > 0 {
+				Log.Errorf(format, args...)
+			} else {
+				Log.Error(format)
+			}
 		} else {
-			Log.Error(format)
+			if len(args) > 0 {
+				Log.Errorf(format, args...)
+			} else {
+				Log.Error(format)
+			}
 		}
 	}
 }

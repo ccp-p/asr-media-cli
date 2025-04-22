@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"os"
 	"sync"
 	"time"
 
@@ -218,6 +219,26 @@ func (s *ASRSelector) RunWithService(ctx context.Context, audioPath string, serv
 
 	utils.Info("[%s] 选择ASR服务: %s", requestID, selectedName)
 
+	// 添加文件验证
+	if _, err := os.Stat(audioPath); os.IsNotExist(err) {
+		utils.Error("[%s] 音频文件不存在: %s", requestID, audioPath)
+		return nil, selectedName, nil, fmt.Errorf("音频文件不存在: %s", audioPath)
+	}
+	
+	// 确保文件大小不为零
+	fileInfo, err := os.Stat(audioPath)
+	if err != nil {
+		utils.Error("[%s] 无法获取文件信息: %v", requestID, err)
+		return nil, selectedName, nil, fmt.Errorf("无法获取文件信息: %w", err)
+	}
+	
+	if fileInfo.Size() == 0 {
+		utils.Error("[%s] 音频文件大小为零: %s", requestID, audioPath)
+		return nil, selectedName, nil, fmt.Errorf("音频文件大小为零: %s", audioPath)
+	}
+	
+	utils.Info("[%s] 文件验证通过: %s (大小: %.2f MB)", requestID, audioPath, float64(fileInfo.Size())/(1024*1024))
+
 	// 创建服务实例
 	service, err = creator(audioPath, useCache)
 	if err != nil {
@@ -233,16 +254,43 @@ func (s *ASRSelector) RunWithService(ctx context.Context, audioPath string, serv
 		}
 	}
 
-	// 执行识别
+	// 执行识别，添加重试机制
 	utils.Info("[%s] 开始执行ASR识别...", requestID)
-	segments, err := service.GetResult(ctx, wrappedCallback)
+	var segments []models.DataSegment
+	var retryCount int = 0
+	const maxRetries = 2
+	
+	for retryCount <= maxRetries {
+		// 创建一个子上下文，确保每次重试都有新的超时
+		taskCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		
+		// 执行任务
+		segments, err = service.GetResult(taskCtx, wrappedCallback)
+		cancel() // 不论是否成功，都释放上下文
+		
+		// 如果成功或达到最大重试次数，退出循环
+		if err == nil || retryCount >= maxRetries {
+			break
+		}
+		
+		// 记录重试
+		retryCount++
+		utils.Warn("[%s] ASR识别失败，将进行第 %d 次重试: %v", requestID, retryCount, err)
+		
+		if callback != nil {
+			callback(30, fmt.Sprintf("识别失败，正在重试(%d/%d)...", retryCount, maxRetries))
+		}
+		
+		// 等待一段时间后重试
+		time.Sleep(time.Second * 2)
+	}
 	
 	// 报告结果
 	success := err == nil && len(segments) > 0
 	s.ReportResult(selectedName, success)
 	
 	if err != nil {
-		utils.Error("[%s] ASR识别失败: %v", requestID, err)
+		utils.Error("[%s] ASR识别最终失败: %v", requestID, err)
 		return nil, selectedName, nil, err
 	}
 	

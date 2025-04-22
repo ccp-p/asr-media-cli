@@ -391,12 +391,22 @@ func (p *BatchProcessor) performASROnAudio(result *BatchResult) error {
 	utils.Info("开始对文件进行语音识别: %s (路径: %s)", filepath.Base(audioPath), audioPath)
 
 	// 检查文件是否存在
-	if _, err := os.Stat(audioPath); os.IsNotExist(err) {
+	fileInfo, err := os.Stat(audioPath)
+	if os.IsNotExist(err) {
 		utils.Error("音频文件不存在: %s", audioPath)
 		if p.ProgressManager != nil {
 			p.ProgressManager.CompleteProgressBar("file_"+fileID, "失败：文件不存在")
 		}
 		return fmt.Errorf("音频文件不存在: %s", audioPath)
+	}
+	
+	// 检查文件大小
+	if fileInfo.Size() == 0 {
+		utils.Error("音频文件大小为0: %s", audioPath)
+		if p.ProgressManager != nil {
+			p.ProgressManager.CompleteProgressBar("file_"+fileID, "失败：文件大小为0")
+		}
+		return fmt.Errorf("音频文件大小为0: %s", audioPath)
 	}
 
 	// 创建进度条ID
@@ -409,13 +419,13 @@ func (p *BatchProcessor) performASROnAudio(result *BatchResult) error {
 		utils.Debug("ASR进度 [%d%%]: %s", percent, message)
 	}
 
-	// 创建上下文
-	ctx, cancel := context.WithTimeout(p.ctx, 15*time.Minute) // 增加超时时间
+	// 创建上下文，带有超时控制
+	ctx, cancel := context.WithTimeout(p.ctx, 150*time.Minute) // 增加超时时间
 	defer cancel()
 
-	// 执行ASR识别
+	// 执行ASR识别，添加重试机制
 	utils.Info("使用ASR服务: %s", p.config.ASRService)
-	segments, _, outputFiles, err := p.ASRSelector.RunWithService(
+	segments, serviceName, outputFiles, err := p.ASRSelector.RunWithService(
 		ctx,
 		audioPath,
 		p.config.ASRService,
@@ -423,9 +433,10 @@ func (p *BatchProcessor) performASROnAudio(result *BatchResult) error {
 		p.config,
 		progressCallback,
 	)
-
+	
 	if err != nil {
-		utils.Error("ASR识别失败: %v", err)
+		// 更多详细的错误信息
+		utils.Error("ASR识别失败: %v (文件: %s, 服务: %s)", err, audioPath, serviceName)
 		p.ProgressManager.CompleteProgressBar(barID, "识别失败: "+err.Error())
 		
 		// 即使识别失败，我们也标记文件为已处理，避免反复处理

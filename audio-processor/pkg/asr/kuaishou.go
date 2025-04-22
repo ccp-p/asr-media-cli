@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"mime/multipart"
 	"net/http"
+	"time"
 
 	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/models"
 	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/utils"
@@ -64,11 +65,32 @@ func (k *KuaiShouASR) GetResult(ctx context.Context, callback ProgressCallback) 
 	}
 	utils.Info("[%s] 提交识别请求...", instanceID)
 
+	// 创建一个带超时的子上下文
+	reqCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
 	// 提交识别请求
-	result, err := k.submit(ctx)
+	result, err := k.submit(reqCtx)
 	if err != nil {
 		utils.Error("[%s] 请求失败: %v", instanceID, err)
+		// 额外记录错误详情
+		utils.Error("[%s] 错误详情：文件大小=%d字节, 上下文状态=%v", 
+			instanceID, len(k.FileBinary), ctx.Err())
+			
+		if callback != nil {
+			callback(100, "识别失败: " + err.Error())
+		}
 		return nil, fmt.Errorf("快手ASR请求失败: %w", err)
+	}
+
+	// 验证结果是否有效
+	if result == nil || len(result.Data.Text) == 0 {
+		errMsg := "快手ASR返回结果为空"
+		utils.Error("[%s] %s", instanceID, errMsg)
+		if callback != nil {
+			callback(100, "识别失败: 服务返回空结果")
+		}
+		return nil, fmt.Errorf(errMsg)
 	}
 
 	// 处理结果
@@ -128,27 +150,39 @@ func (k *KuaiShouASR) submit(ctx context.Context) (*KuaiShouResponse, error) {
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
 	req.Header.Set("Accept", "application/json, text/plain, */*")
+	
+	// 记录关键请求点
+	requestID := utils.GenerateRandomString(6)
+	utils.Info("KuaiShou-REQ-%s: 正在发送请求，文件大小=%dKB", requestID, len(k.FileBinary)/1024)
 
-	// 发送请求
-	client := &http.Client{}
+	// 创建一个自定义的HTTP客户端，设置更合理的超时时间
+	client := &http.Client{
+		Timeout: 3 * time.Minute, // 设置超时时间
+	}
+	
+	// 发送请求并计时
+	startTime := time.Now()
 	resp, err := client.Do(req)
+	requestDuration := time.Since(startTime)
+	utils.Info("KuaiShou-REQ-%s: 请求耗时 %.2f 秒", requestID, requestDuration.Seconds())
+	
 	if err != nil {
 		utils.Error("快手ASR请求发送失败: %v", err)
-		return &KuaiShouResponse{}, fmt.Errorf("发送HTTP请求失败: %w", err)
+		return nil, fmt.Errorf("发送HTTP请求失败: %w", err)
 	}
 	defer resp.Body.Close()
 
 	// 检查HTTP状态码
 	if resp.StatusCode != http.StatusOK {
 		utils.Error("快手ASR请求返回非200状态码: %d", resp.StatusCode)
-		return &KuaiShouResponse{}, fmt.Errorf("HTTP请求返回错误状态码: %d", resp.StatusCode)
+		return nil, fmt.Errorf("HTTP请求返回错误状态码: %d", resp.StatusCode)
 	}
 
 	// 读取响应
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		utils.Error("读取响应失败: %v", err)
-		return &KuaiShouResponse{}, fmt.Errorf("读取响应内容失败: %w", err)
+		return nil, fmt.Errorf("读取响应内容失败: %w", err)
 	}
 
 	// 输出原始响应用于调试
@@ -157,20 +191,20 @@ func (k *KuaiShouASR) submit(ctx context.Context) (*KuaiShouResponse, error) {
 	// 检查响应是否为空
 	if len(body) == 0 {
 		utils.Error("快手ASR返回空响应")
-		return &KuaiShouResponse{}, fmt.Errorf("接收到空响应")
+		return nil, fmt.Errorf("接收到空响应")
 	}
 
 	// 解析JSON
 	var result KuaiShouResponse
 	if err := json.Unmarshal(body, &result); err != nil {
 		utils.Error("解析响应JSON失败: %v, 原始数据: %s", err, string(body))
-		return &KuaiShouResponse{}, fmt.Errorf("解析JSON响应失败: %w", err)
+		return nil, fmt.Errorf("解析JSON响应失败: %w", err)
 	}
 
 	// 检查解析后的结果
 	if result.Data.Text == nil {
 		utils.Error("快手ASR响应中没有文本数据")
-		return &KuaiShouResponse{}, fmt.Errorf("响应中没有文本数据")
+		return nil, fmt.Errorf("响应中没有文本数据")
 	}
 
 	utils.Info("成功解析快手ASR响应，文本段落数量: %d", len(result.Data.Text))

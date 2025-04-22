@@ -271,6 +271,7 @@ func (m *FolderMonitor) processFile(filePath string) {
 
 	// 检查文件是否仍然存在
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		utils.Warn("文件已不存在，跳过处理: %s", filePath)
 		return
 	}
 
@@ -278,16 +279,36 @@ func (m *FolderMonitor) processFile(filePath string) {
 	
 	// 使用处理器处理文件
 	if m.processor != nil {
-		go func() {
+		go func(path string) {
+			// 创建唯一的处理ID
+			processID := fmt.Sprintf("process-%s-%s", 
+				filepath.Base(path), 
+				utils.GenerateRandomString(6))
+				
+			utils.Info("[%s] 开始处理文件: %s", processID, path)
+			
 			// 等待文件写入完成
 			time.Sleep(2 * time.Second)
 			
-			if m.processor.ProcessFile(filePath) {
-				utils.Info("文件处理成功: %s", filePath)
-			} else {
-				utils.Error("文件处理失败: %s", filePath)
+			// 再次检查文件是否存在，防止处理过程中被删除
+			if _, err := os.Stat(path); os.IsNotExist(err) {
+				utils.Warn("[%s] 文件已不存在，跳过处理: %s", processID, path)
+				return
 			}
-		}()
+			
+			// 检查文件大小是否为0
+			fileInfo, err := os.Stat(path)
+			if err == nil && fileInfo.Size() == 0 {
+				utils.Warn("[%s] 文件大小为0，跳过处理: %s", processID, path)
+				return
+			}
+			
+			if m.processor.ProcessFile(path) {
+				utils.Info("[%s] 文件处理成功: %s", processID, path)
+			} else {
+				utils.Error("[%s] 文件处理失败: %s", processID, path)
+			}
+		}(filePath)
 		return
 	}
 	
