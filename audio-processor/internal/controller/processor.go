@@ -278,12 +278,12 @@ func (pc *ProcessorController) Cleanup() {
 
 // 注册ASR服务
 func (pc *ProcessorController) registerASRServices() {
-    pc.ASRSelector.RegisterService("kuaishou", 
-        func(audioPath string, useCache bool) (asr.ASRService, error) {
-            return asr.NewKuaiShouASR(audioPath, useCache)
-        }, 
-        10,
-    )
+    // pc.ASRSelector.RegisterService("kuaishou", 
+    //     func(audioPath string, useCache bool) (asr.ASRService, error) {
+    //         return asr.NewKuaiShouASR(audioPath, useCache)
+    //     }, 
+    //     10,
+    // )
     
     pc.ASRSelector.RegisterService("bcut", 
         func(audioPath string, useCache bool) (asr.ASRService, error) {
