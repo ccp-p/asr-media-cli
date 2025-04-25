@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -498,9 +499,13 @@ func (p *BatchProcessor) extractAudioFromFile(filePath string) BatchResult {
 
 	// 检查文件类型
 	ext := filepath.Ext(filePath)
+	lowerExt := strings.ToLower(ext)
 	isVideo := false
 	for _, videoExt := range p.VideoExtensions {
-		if videoExt == ext {
+		// lowercase扩展名以进行比较
+		lowerVideoExt := strings.ToLower(videoExt)
+    
+	    if lowerVideoExt == lowerExt {
 			isVideo = true
 			break
 		}
