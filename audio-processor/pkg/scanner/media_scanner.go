@@ -31,7 +31,7 @@ type MediaScanner struct {
 func NewMediaScanner() *MediaScanner {
 	return &MediaScanner{
 		AudioExtensions: []string{".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac"},
-		VideoExtensions: []string{".mp4", ".mov", ".avi", ".mkv", ".wmv"},
+		VideoExtensions: []string{".flv",".mp4", ".mov", ".avi", ".mkv", ".wmv"},
 	}
 }
 

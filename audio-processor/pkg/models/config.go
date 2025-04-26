@@ -74,7 +74,7 @@ func NewDefaultConfig() *Config {
         LogLevel:          "INFO",
         LogFile:           "",
         MaxPartTime:       20,
-        ExportSRT:         false,
+        ExportSRT:         true,
         ASRService:       "auto",
         ExportJSON: false,
     }

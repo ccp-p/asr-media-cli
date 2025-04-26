@@ -18,5 +18,6 @@
     "retry_delay": 1.0,
     "log_level": "INFO",
     "log_file": "./output/audio_processing.log",
-    "watch": true
+    "watch": true,
+    "ExprotSRT":true
 }

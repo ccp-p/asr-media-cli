@@ -24,6 +24,29 @@
             max-width: 1280px;
             box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
             position: relative;
+            /* 添加新属性 */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* 添加一个新的样式类用于竖屏视频 */
+        .portrait-video .dplayer {
+            max-width: 60%;
+            /* 竖屏视频使用较小的宽度 */
+            margin: 0 auto;
+        }
+
+        /* 响应式设计优化 */
+        @media (max-width: 768px) {
+            .player-container {
+                width: 95%;
+            }
+
+            .portrait-video .dplayer {
+                max-width: 85%;
+                /* 在移动设备上稍微扩大竖屏视频宽度 */
+            }
         }
 
         /* 响应式设计 */
@@ -671,6 +694,24 @@
                     console.log(`恢复到上次播放位置: ${formatTime(lastPlayTime)}`);
                     dp.notice(`恢复到上次播放位置: ${formatTime(lastPlayTime)}`, 3000);
                 }
+                // 添加视频宽高比检测
+                const videoRatio = dp.video.videoWidth / dp.video.videoHeight;
+                const playerContainer = document.querySelector('.player-container');
+
+                // 如果是竖屏视频(宽高比小于1)
+                if (videoRatio < 1) {
+                    playerContainer.classList.add('portrait-video');
+                    dp.notice('检测到竖屏视频，已优化显示', 3000);
+                } else {
+                    playerContainer.classList.remove('portrait-video');
+                }
+
+                // 强制重新计算播放器大小
+                setTimeout(() => {
+                    if (typeof dp.resize === 'function') {
+                        dp.resize();
+                    }
+                }, 200);
             });
 
             // 恢复之前保存的字幕内容(如果有)
@@ -2037,7 +2078,7 @@
             // 源文件名输入事件处理
             if (sourceFilenameInput) {
                 sourceFilenameInput.addEventListener('input', function () {
-                    const targetPath =   updateTargetFilename(this.value, keepPrefixCheckbox.checked);
+                    const targetPath = updateTargetFilename(this.value, keepPrefixCheckbox.checked);
 
                     copyToClipboard(targetPath); // 复制源文件名到剪贴板
                 });
@@ -2101,7 +2142,7 @@
                 }, 3000);
             }
             // 更新目标文件名
-            function updateTargetFilename(sourceName,keepPrefix) {
+            function updateTargetFilename(sourceName, keepPrefix) {
                 if (!sourceName) {
                     targetFilenameInput.value = '';
                     return;
