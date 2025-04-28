@@ -121,7 +121,14 @@ func splitPDFBySize(inputPath string, maxSizeMB int) ([]string, error) {
 
 func main() {
     // 使用固定路径，需要确保文件存在且是PDF文件
-    inputPath := "D://download//liaodao1.pdf" // 确保添加.pdf扩展名
+    var inputPath string
+    // if len(os.Args) < 2 || os.Args[1] == "" {
+    //     fmt.Println("请提供一个PDF文件名作为参数。")
+    //     os.Exit(1)
+    // } else {
+    //     inputPath = filepath.Join("D://download", os.Args[1])
+    // }
+    inputPath = "D://download//liaodao4.pdf"
     maxSizeMB := 99 // 默认略小于100MB
     
     fmt.Printf("正在将 %s 分割为最大 %d MB 的多个部分...\n", inputPath, maxSizeMB)
