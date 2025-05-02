@@ -1,107 +1,98 @@
 package main
 
 import (
-	"context"
-	"flag"
-	"fmt"
-	"os"
-	"time"
-
-	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/asr"
-	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/models"
-	"github.com/ccp-p/asr-media-cli/audio-processor/pkg/utils"
+    "fmt"
+    "io"
+    "log"
+    "net/http"
+    "regexp"
+    "strings"
+    "time"
 )
 
 func main() {
-	// 解析命令行参数
-	audioPath := flag.String("audio", "D:\\download\\dest\\test.mp3", "音频文件路径")
-	service := flag.String("service", "auto", "ASR服务选择 (kuaishou, auto)")
-	useCache := flag.Bool("cache", true, "是否使用缓存")
-	logLevel := flag.String("log-level", utils.LogLevelNormal, "日志级别")
-	logFile := flag.String("log-file", "", "日志文件路径")
-	exportSRT := flag.Bool("export-srt", true, "是否导出SRT字幕文件")
-	exportJSON:= flag.Bool("export-json", true, "是否导出JSON文件")
-	flag.Parse()
+    url := "https://pan.quark.cn/s/11f07d053042#/list/share" // 目标 URL
+
+    fmt.Printf("正在请求 URL: %s\n", url)
+
+    // 创建一个 HTTP 客户端，可以设置超时等
+    client := &http.Client{
+        Timeout: 15 * time.Second, // 设置 15 秒超时
+    }
+
+    // 创建请求，可以添加必要的 Header 模拟浏览器
+    req, err := http.NewRequest("GET", url, nil)
+    if err != nil {
+        log.Fatalf("创建请求失败: %v", err)
+    }
+
+    // 添加一些常见的浏览器 Header，增加请求成功的可能性
+    req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+    req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9")
+    req.Header.Set("Accept-Language", "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7")
+    // 如果需要，可能还需要添加 Cookie 等
+
+    // 发送 HTTP GET 请求
+    resp, err := client.Do(req)
+    if err != nil {
+        log.Fatalf("请求 URL 失败: %v", err)
+    }
+    defer resp.Body.Close() // 确保关闭响应体
+
+    // 检查响应状态码
+    if resp.StatusCode != http.StatusOK {
+        log.Fatalf("请求失败，状态码: %d %s", resp.StatusCode, resp.Status)
+    }
+
+    // 读取响应体内容
+    bodyBytes, err := io.ReadAll(resp.Body)
 	
-	// 初始化日志
-	if err := utils.InitLogger(*logLevel, *logFile); err != nil {
-		fmt.Fprintf(os.Stderr, "初始化日志失败: %v\n", err)
-		os.Exit(1)
-	}
-	
-	// 检查音频文件路径
-	if *audioPath == "" {
-		utils.Fatal("必须指定音频文件路径")
-	}
-	
-	// 创建上下文
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-	
-	// 创建ASR选择器
-	selector := asr.NewASRSelector()
-	
-	// 注册服务
-	// selector.RegisterService("kuaishou", func(audioPath string, useCache bool) (asr.ASRService, error) {
-	// 	// 调用原始函数，它返回 *KuaiShouASR
-	// 	service, err := asr.NewKuaiShouASR(audioPath, useCache)
-	// 	// 返回时，Go 会自动将 *KuaiShouASR 转换为 ASRService 接口
-	// 	return service, err
-	// }, 10)
-	
-	
-	utils.Info("开始识别音频文件...")
-	
-	// 进度回调
-	progressCallback := func(percent int, message string) {
-		utils.Info("进度 [%d%%] %s", percent, message)
-	}
-	
-	// 创建配置
-	config := &models.Config{
-		OutputFolder:      "./output",
-		ExportSRT:         *exportSRT,  // 使用命令行参数
-		FormatText:        true,
-		IncludeTimestamps: true,
-	}
-	
-	// 确保输出目录存在
-	os.MkdirAll(config.OutputFolder, 0755)
-	
-	// 执行识别
-	start := time.Now()
-	segments, serviceName, outputFiles, err := selector.RunWithService(ctx, *audioPath, *service, *useCache, config, progressCallback)
-	if err != nil {
-		utils.Fatal("识别失败: %v", err)
-	}
-	
-	duration := time.Since(start)
-	utils.Info("使用 %s 服务识别完成，耗时 %.2f 秒", serviceName, duration.Seconds())
-	
-	// 输出结果文件信息
-	if len(outputFiles) > 0 {
-		utils.Info("生成的文件:")
-		for fileType, filePath := range outputFiles {
-			utils.Info("- %s: %s", fileType, filePath)
-		}
-	}
-	
-	// 输出结果
-	if len(segments) == 0 {
-		utils.Info("未识别出任何内容")
-		return
-	}
-	
-	utils.Info("识别结果 (%d 段):", len(segments))
-	for i, seg := range segments {
-		utils.Info("[%02d] %.2f-%.2f: %s", i+1, seg.StartTime, seg.EndTime, seg.Text)
-	}
-	
-	// 输出服务统计信息
-	stats := selector.GetStats()
-	utils.Info("ASR服务统计信息:")
-	for name, stat := range stats {
-		utils.Info("%s: 调用次数=%d, 成功率=%s, 可用=%v", 
-			name, stat["count"], stat["success_rate"], stat["available"])
-	}
+    if err != nil {
+        log.Fatalf("读取响应体失败: %v", err)
+    }
+    htmlContent := string(bodyBytes)
+    fmt.Println(htmlContent)
+    fmt.Println("成功获取响应，长度:", len(htmlContent))
+    // fmt.Println("响应体内容 (前 500 字符):", htmlContent[:500]) // 可选：打印部分内容检查
+
+    // 定义正则表达式
+    // 匹配包含所有三个类名的元素（顺序不限），并捕获其间的文本内容
+    // (?s) 让 . 匹配换行符
+    // (?:...) 非捕获分组
+    // \b 单词边界，确保匹配完整的类名
+    // .*? 非贪婪匹配
+    // >(.*?)< 捕获标签之间的内容（捕获组 1）
+    regexPattern := `(?s)<(?:div|span|td)[^>]*?\bclass="[^"]*?\bfilename-text\b[^"]*?\beditable-cell\b[^"]*?\beditable-cell-allow\b[^"]*?"[^>]*?>(.*?)</(?:div|span|td)>`
+    re := regexp.MustCompile(regexPattern)
+
+    // 查找所有匹配项
+    matches := re.FindAllStringSubmatch(htmlContent, -1)
+
+    fmt.Printf("正则表达式 '%s' 查找结果:\n", regexPattern)
+    if len(matches) == 0 {
+        fmt.Println("未找到任何匹配指定类名的元素。这很可能是因为内容是动态加载的。")
+    } else {
+        fmt.Printf("找到了 %d 个匹配项:\n", len(matches))
+        count := 0
+        for _, match := range matches {
+            if len(match) > 1 {
+                // 提取捕获组 1 的内容，并去除首尾空白
+                title := strings.TrimSpace(match[1])
+                // 进一步清理，移除可能存在的内部 HTML 标签（简单替换）
+                innerTagRegex := regexp.MustCompile(`<.*?>`)
+                title = innerTagRegex.ReplaceAllString(title, "")
+                title = strings.TrimSpace(title) // 再次 trim
+
+                if title != "" {
+                    count++
+                    fmt.Printf("  - %d: %s\n", count, title)
+                }
+            }
+        }
+        if count == 0 {
+            fmt.Println("虽然找到了匹配的标签结构，但未能提取到有效的文本标题。")
+        }
+    }
+
+    fmt.Println("\n提醒：如果未找到预期结果，很可能是因为文件列表是通过 JavaScript 动态加载的，无法通过简单的 HTTP 请求和正则表达式获取。")
 }

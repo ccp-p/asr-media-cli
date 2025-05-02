@@ -470,6 +470,13 @@ func (p *BatchProcessor) performASROnAudio(result *BatchResult) error {
 	if p.ProgressManager != nil {
 		p.ProgressManager.CompleteProgressBar("file_"+fileID, "处理完成")
 	}
+	if  result.Success && strings.ToLower(filepath.Ext(audioPath)) == ".mp3" {
+		utils.Info("识别完成，删除提取的MP3文件: %s", audioPath)
+		if err := os.Remove(audioPath); err != nil {
+			utils.Warn("无法删除MP3文件: %v", err)
+        } 
+    }
+    
 	return nil
 }
 

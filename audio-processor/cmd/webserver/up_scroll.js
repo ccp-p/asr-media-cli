@@ -1,6 +1,11 @@
-// --- 配置 ---
-const scrollContainerSelector = 'div.search-super-content-container.search-super-content-links'; // 要滚动的容器的选择器
-const itemSelector = 'a.row.row-with-padding.row-clickable.hover-effect.search-super-item'; // 要统计的元素的选择器
+let scrollContainerSelector = 'div.search-super-content-container.search-super-content-links'; // 要滚动的容器的选择器
+// 面板
+scrollContainerSelector = 'div.bubble.channel-post'
+
+let itemSelector = 'a.row.row-with-padding.row-clickable.hover-effect.search-super-item'; // 要统计的元素的选择器
+
+itemSelector = 'div.bubble-content'; // 要统计的元素的选择器
+
 const scrollDelay = 100; // 每次滚动后等待的毫秒数
 const checkInterval = 100; // setInterval 的间隔时间
 // --- 配置结束 ---

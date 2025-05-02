@@ -101,6 +101,7 @@ func (p *ASRProcessor) generateTextOutput(segments []models.DataSegment, audioPa
 	
 	// 3. 确定输出路径
 	var outputFile string
+	var outputMdFile string
 	if partNum != nil {
 		outputSubfolder := filepath.Join(p.Config.OutputFolder, baseName)
 		if err := os.MkdirAll(outputSubfolder, 0755); err != nil {
@@ -109,8 +110,17 @@ func (p *ASRProcessor) generateTextOutput(segments []models.DataSegment, audioPa
 		outputFile = filepath.Join(outputSubfolder, fmt.Sprintf("%s_part%d.txt", baseName, *partNum))
 	} else {
 		outputFile = filepath.Join(p.Config.OutputFolder, fmt.Sprintf("%s.txt", baseName))
+		if(p.Config.ExportMD){
+		  outputMdFile = filepath.Join(p.Config.OutputFolder, fmt.Sprintf("%s.md", baseName))
+		}
 	}
-	
+
+	if outputMdFile != "" {
+		// 4. 写入Markdown文件
+		if err := os.WriteFile(outputMdFile, []byte(outputText.String()), 0644); err != nil {
+			return "", fmt.Errorf("写入Markdown文件失败: %w", err)
+		}
+	}
 	// 4. 写入文件
 	if err := os.WriteFile(outputFile, []byte(outputText.String()), 0644); err != nil {
 		return "", fmt.Errorf("写入文本文件失败: %w", err)

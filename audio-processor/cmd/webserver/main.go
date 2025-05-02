@@ -1,105 +1,104 @@
 package main
 
 import (
-	"fmt"
-	"log"
-	"net/http"
-	"os"
-	"path/filepath"
-	"strings"
+    "fmt"
+    "io"
+    "log"
+    "net/http"
+    "os"
+    "path/filepath"
 )
 
-// spaHandler 结构用于处理单页应用路由
-type spaHandler struct {
-	staticPath string
-	indexPath  string
-}
+// corsMiddleware 添加基本的 CORS 响应头，允许所有来源和 POST 方法。
+func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        // 允许来自任何来源的请求
+        w.Header().Set("Access-Control-Allow-Origin", "*")
+        // 允许 POST 方法和 OPTIONS (用于预检请求)
+        w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+        // 允许 Content-Type 请求头 (fetch 需要)
+        w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
-// ServeHTTP 实现 http.Handler 接口
-func (h spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// 获取请求的文件路径
-	path := filepath.Join(h.staticPath, r.URL.Path)
+        // 处理预检 OPTIONS 请求
+        if r.Method == "OPTIONS" {
+            w.WriteHeader(http.StatusOK)
+            return
+        }
 
-	// 检查文件是否存在
-	_, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		// 文件不存在，提供 index.html
-		http.ServeFile(w, r, filepath.Join(h.staticPath, h.indexPath))
-		return
-	} else if err != nil {
-		// 其他错误
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// 文件存在，直接提供文件
-	http.FileServer(http.Dir(h.staticPath)).ServeHTTP(w, r)
-}
-
-func apiHandler(w http.ResponseWriter, r *http.Request) {
-    // 打印接收到的 API 请求路径
-    log.Printf("接收到 API 请求: %s %s", r.Method, r.URL.Path)
-
-    // 移除 /api/ 前缀，方便匹配
-    trimmedPath := strings.TrimPrefix(r.URL.Path, "/api/")
-
-    // 根据路径分发到不同的处理器
-    switch {
-    case trimmedPath == "generate_note":
-        handleGenerateNote(w, r)
-    case trimmedPath == "delete_task":
-        handleDeleteTask(w, r)
-    // 注意：task_status 后面可能跟着 task_id
-    case strings.HasPrefix(trimmedPath, "task_status/"):
-        handleGetTaskStatus(w, r)
-    case trimmedPath == "image_proxy":
-        handleImageProxy(w, r)
-    default:
-        // 如果没有匹配的 API 路径，返回 404
-        http.NotFound(w, r)
-        log.Printf("未找到 API 处理器: %s", r.URL.Path)
+        // 调用实际的处理函数
+        next(w, r)
     }
 }
 
+// handleSaveData 接收通过 POST 发送的数据，并将其追加到本地文件。
+func handleSaveData(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost {
+        http.Error(w, "只允许 POST 方法", http.StatusMethodNotAllowed)
+        return
+    }
+
+    // 读取请求体 (包含 DOM 数据)
+    body, err := io.ReadAll(r.Body)
+    if err != nil {
+        http.Error(w, "读取请求体失败", http.StatusInternalServerError)
+        log.Printf("读取请求体错误: %v", err)
+        return
+    }
+    defer r.Body.Close()
+
+    if len(body) == 0 {
+        // 不保存空数据，但确认收到请求
+        log.Println("收到空的请求体，无需保存。")
+        w.WriteHeader(http.StatusOK)
+        fmt.Fprintln(w, "收到空数据。")
+        return
+    }
+
+    // 定义保存数据的文件路径
+    saveFileName := "saved_dom_data.html"
+    savePath := filepath.Join(".", saveFileName) // 保存在可执行文件所在的相同目录下
+
+    // 以追加模式打开文件，如果文件不存在则创建
+    file, err := os.OpenFile(savePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        http.Error(w, "打开或创建保存文件失败", http.StatusInternalServerError)
+        log.Printf("打开/创建文件 %s 失败: %v", savePath, err)
+        return
+    }
+    defer file.Close()
+
+    // 将接收到的数据写入文件，并在之后添加分隔符
+    if _, err := file.Write(body); err != nil {
+        http.Error(w, "写入文件失败", http.StatusInternalServerError)
+        log.Printf("写入文件 %s 失败: %v", savePath, err)
+        return
+    }
+    // 添加换行符或分隔符以便阅读（如果追加多个数据块）
+    if _, err := file.WriteString("\n\n<!-- === 数据块结束 === -->\n\n"); err != nil {
+        log.Printf("写入分隔符到文件 %s 时出错: %v", savePath, err)
+        // 即使写入分隔符失败也继续
+    }
+
+    log.Printf("成功追加 %d 字节到 %s", len(body), savePath)
+
+    // 向浏览器发送成功响应
+    w.WriteHeader(http.StatusOK)
+    fmt.Fprintln(w, "数据接收并保存成功。")
+}
+
 func main() {
-	// 获取当前工作目录 (例如: D:\project\my_py_project\segement_audio\audio-processor\cmd\webserver)
-	currentWorkDir, err := os.Getwd()
-	if err != nil {
-		log.Fatalf("获取当前工作目录失败: %v", err)
-	}
-	fmt.Println("当前工作目录:", currentWorkDir)
+    // 为 /save 端点注册处理函数，并用 CORS 中间件包装
+    http.HandleFunc("/save", corsMiddleware(handleSaveData))
 
-	// 获取 audio-processor 目录 (父目录的父目录)
-	projectRoot := filepath.Dir(filepath.Dir(currentWorkDir))
-	fmt.Println("项目根目录 (audio-processor):", projectRoot)
+    port := ":8080"
+    saveFileName := "saved_dom_data.html"
+    log.Printf("启动本地服务器于 http://localhost%s", port)
+    log.Printf("数据将追加到: %s (位于服务器运行目录下)", saveFileName)
+    log.Println("正在监听 /save 路径上的 POST 请求 ...")
 
-	// 构建静态文件目录的正确路径
-	staticFilesDir := filepath.Join(projectRoot, "BillNote_frontend", "dist")
-	indexPath := "index.html"
-
-	// 检查静态文件目录是否存在
-	if _, err := os.Stat(staticFilesDir); os.IsNotExist(err) {
-		log.Fatalf("错误：静态文件目录 '%s' 不存在。请先构建前端应用 (例如：pnpm run build)。", staticFilesDir)
-	} else {
-		log.Printf("将从目录 '%s' 提供静态文件", staticFilesDir)
-	}
-
-	// 创建 SPA 处理器
-	spa := spaHandler{staticPath: staticFilesDir, indexPath: indexPath}
-
-	// 注册 API 处理器
-	http.HandleFunc("/api/", apiHandler)
-
-	// 注册 SPA 处理器处理所有其他请求
-	http.Handle("/", spa)
-
-	port := ":8080"
-	log.Printf("服务器启动，监听端口 %s", port)
-	log.Printf("请在浏览器中打开 http://localhost%s", port)
-
-	// 启动服务器
-	err = http.ListenAndServe(port, nil) // 使用 = 而不是 :=
-	if err != nil {
-		log.Fatalf("服务器启动失败: %v", err)
-	}
+    // 启动服务器
+    err := http.ListenAndServe(port, nil)
+    if err != nil {
+        log.Fatalf("服务器启动失败: %v", err)
+    }
 }
