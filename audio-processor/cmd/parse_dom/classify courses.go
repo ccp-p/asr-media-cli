@@ -56,7 +56,7 @@ func classifyCourse(course Course, categories map[string][]string) string {
 
 func main() {
     // --- 1. 读取文件 --- (保持不变)
-    parPath := `D:\project\my_py_project\segement_audio\audio-processor\cmd\parse_dom`
+    parPath := `D:\download\dest` // 修改为你的文件路径
     fileName := `ouput.txt` // 修改为你的文件路径
     filePath := filepath.Join(parPath, fileName)
     fmt.Printf("正在读取文件: %s\n", filePath)

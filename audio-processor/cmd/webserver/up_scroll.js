@@ -1,10 +1,10 @@
 let scrollContainerSelector = 'div.search-super-content-container.search-super-content-links'; // 要滚动的容器的选择器
 // 面板
-scrollContainerSelector = 'div.bubble.channel-post'
+// scrollContainerSelector = 'div.bubble.channel-post'
 
 let itemSelector = 'a.row.row-with-padding.row-clickable.hover-effect.search-super-item'; // 要统计的元素的选择器
 
-itemSelector = 'div.bubble-content'; // 要统计的元素的选择器
+// itemSelector = 'div.bubble-content'; // 要统计的元素的选择器
 
 const scrollDelay = 100; // 每次滚动后等待的毫秒数
 const checkInterval = 100; // setInterval 的间隔时间
@@ -41,7 +41,10 @@ function scrollAndCount() {
     setTimeout(() => {
         const itemsAfterScroll = document.querySelectorAll(itemSelector);
         const currentItemCount = itemsAfterScroll.length;
-        console.log(`[统计] 当前找到 ${currentItemCount} 个元素 (${itemSelector})`);
+
+        if (currentItemCount !== lastItemCount) {
+            console.log(`[统计] 当前找到 ${currentItemCount} 个元素 (${itemSelector})`);
+        }
 
         if (currentItemCount === lastItemCount) {
             noNewItemCount++;
