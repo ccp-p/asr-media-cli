@@ -1,11 +1,11 @@
 package main
 
 import (
-    "encoding/json"
-    "fmt"
-    "os" // 使用 os.ReadFile (Go 1.16+)
-    "path/filepath"
-    "strings"
+	"encoding/json"
+	"fmt"
+	"os" // 使用 os.ReadFile (Go 1.16+)
+	"path/filepath"
+	"strings"
 )
 
 // Course 结构体，根据你的JSON字段调整
@@ -31,7 +31,7 @@ var categoryKeywords = map[string][]string{
     "音乐": {"音乐", "乐器", "吉他", "钢琴", "唱歌", "声乐", "作曲", "编曲", "乐理", "尤克里里", "鼓", "贝斯"},
     "语言": {"英语", "日语", "韩语", "法语", "德语", "西班牙语", "口语", "听力", "词汇", "语法", "翻译", "外语"},
     "职场": {"职场", "沟通", "管理", "领导力", "效率", "时间管理", "ppt", "excel", "word", "求职", "简历", "面试技巧"},
-    "化妆": {"化妆"},
+    "化妆": {"化妆","妆容","护肤","美容","美妆","化妆技巧","化妆教程","化妆品","护肤品","面膜","眼影","口红"},
     // 可以继续添加更多分类...
 }
 
@@ -56,7 +56,7 @@ func classifyCourse(course Course, categories map[string][]string) string {
 
 func main() {
     // --- 1. 读取文件 --- (保持不变)
-    parPath := `D:\download\dest` // 修改为你的文件路径
+    parPath := `D:\download\dest`
     fileName := `ouput.txt` // 修改为你的文件路径
     filePath := filepath.Join(parPath, fileName)
     fmt.Printf("正在读取文件: %s\n", filePath)
