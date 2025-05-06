@@ -15,6 +15,9 @@ let isProcessing = false;
 let lastItemCount = 0;
 let noNewItemCount = 0;
 let processedItemCount = 0; // 新增：跟踪已处理/发送的 item 数量
+let sentItemIdentifiers = new Set(); // 新增：跟踪已发送 item 的标识符 (outerHTML)
+const MAX_ITEMS = 2000; // 新增：最大 item 数量阈值
+const ITEMS_TO_REMOVE = 1000; // 新增：达到阈值时要删除的 item 数量
 
 // 新增：发送新 item 数据到服务器的函数
 function sendNewItemsToServer(newItems) {
@@ -54,52 +57,91 @@ function scrollAndCount() {
 
     const containers = document.querySelectorAll(scrollContainerSelector);
 
-    if (!containers) {
+    if (!containers || containers.length === 0) { // 检查 containers 是否为空
+        console.error("[错误] 找不到滚动容器:", scrollContainerSelector);
         stopScrolling();
         isProcessing = false;
         return;
     }
-    // inner child is more than 10 element
-    const getNotEmptyContainer =  Array.from(containers).find(container => {
+
+    // 找到包含足够多子元素的容器
+    const getNotEmptyContainer = Array.from(containers).find(container => {
         const items = container.querySelectorAll(itemSelector);
-        return items.length > 10;
-    })
-    const itemsBeforeScroll = getNotEmptyContainer.querySelectorAll(itemSelector);
-    const lastItem = itemsBeforeScroll.length > 0 ? itemsBeforeScroll[itemsBeforeScroll.length - 1] : null;
+        return items.length > 10; // 或者其他合适的阈值
+    });
+
+    if (!getNotEmptyContainer) {
+        console.log("[信息] 未找到足够活跃的滚动容器或容器内元素不足。");
+        // 考虑是否应该停止或等待
+        // stopScrolling(); // 如果确定无法继续，则停止
+        isProcessing = false; // 允许下一次尝试
+        return;
+    }
+
+    // 滚动前获取 item 数量 (用于比较是否新增) - 注意：这里的 lastItemCount 是上个周期的最终数量
+    // const itemsBeforeScroll = getNotEmptyContainer.querySelectorAll(itemSelector); // 不再需要
+
+    const container = getNotEmptyContainer.querySelectorAll(itemSelector); // 获取容器内最后一个 item
+    const lastItem = container.length > 0 ? container[container.length - 1] : null;
 
     if (lastItem) {
         lastItem.scrollIntoView({ behavior: 'auto', block: 'end' });
     } else {
-        container.scrollTop = container.scrollHeight;
+        // 如果没有 item，尝试滚动容器本身
+        getNotEmptyContainer.scrollTop = getNotEmptyContainer.scrollHeight;
     }
 
     setTimeout(() => {
-        const itemsAfterScrollNodeList = document.querySelectorAll(itemSelector);
-        const itemsAfterScroll = Array.from(itemsAfterScrollNodeList); // 转换为数组以便使用 slice
-        const currentItemCount = itemsAfterScroll.length;
+        const allItemsNodeList = getNotEmptyContainer.querySelectorAll(itemSelector);
+        const allItems = Array.from(allItemsNodeList);
+        let currentItemCount = allItems.length;
 
         //  if count changed log else do nothing
+        //  使用 allItems.length 和上个周期的 lastItemCount 比较
         if (currentItemCount !== lastItemCount) {
             console.log(`[统计] 当前找到 ${currentItemCount} 个元素 (${itemSelector})`);
         }
 
-        // --- 新增：检查并发送新 item ---
-        if (currentItemCount > processedItemCount) {
-            const newItems = itemsAfterScroll.slice(processedItemCount);
+        // --- 新增：使用 Set 检查并发送新 item ---
+        const newItems = allItems.filter(item => !sentItemIdentifiers.has(item.outerHTML));
+        if (newItems.length > 0) {
             sendNewItemsToServer(newItems);
-            processedItemCount = currentItemCount; // 更新已处理的 item 数量
+            newItems.forEach(item => sentItemIdentifiers.add(item.outerHTML)); // 添加已发送 item 的标识符
+            console.log(`[发送数据] ${newItems.length} 个新 item 已发送并记录。Set size: ${sentItemIdentifiers.size}`);
         }
         // --- 发送新 item 结束 ---
 
-        if (currentItemCount === lastItemCount) {
-            noNewItemCount++;
-        } else {
-            noNewItemCount = 0;
+        // --- 新增：检查并删除旧 item ---
+        let itemsWereRemoved = false;
+        if (currentItemCount > MAX_ITEMS) {
+            console.log(`[维护] Item 数量 (${currentItemCount}) 超过 ${MAX_ITEMS}，准备删除前 ${ITEMS_TO_REMOVE} 个 item。`);
+            const itemsToRemove = allItems.slice(0, ITEMS_TO_REMOVE);
+
+            // 从 Set 中移除
+            itemsToRemove.forEach(item => sentItemIdentifiers.delete(item.outerHTML));
+            // 从 DOM 中移除
+            itemsToRemove.forEach(item => item.remove());
+
+            currentItemCount -= ITEMS_TO_REMOVE; // 更新当前计数
+            itemsWereRemoved = true;
+            console.log(`[维护] 已删除 ${ITEMS_TO_REMOVE} 个旧 item。剩余: ${currentItemCount}。Set size: ${sentItemIdentifiers.size}`);
         }
-        lastItemCount = currentItemCount;
+        // --- 删除旧 item 结束 ---
+
+
+        // --- 更新停止检查逻辑 ---
+        // 比较本周期 *删除后* 的数量 (currentItemCount) 与上周期 *删除后* 的数量 (lastItemCount)
+        if (currentItemCount === lastItemCount && !itemsWereRemoved) { // 只有在数量没变且没有执行删除时，才认为没有新内容加载
+             noNewItemCount++;
+             console.log(`[状态] Item 数量未变 (${currentItemCount}) 且未删除，noNewItemCount = ${noNewItemCount}`);
+        } else {
+             noNewItemCount = 0; // 只要数量变化或执行了删除，就重置计数器
+        }
+        lastItemCount = currentItemCount; // 更新 lastItemCount 为本周期 *结束时* 的数量，供下周期比较
 
         // 设置一个非常大的阈值，实际上禁用了基于次数的自动停止
-        if (noNewItemCount >= 10000000) {
+        if (noNewItemCount >= 10000000) { // 保留原来的大阈值
+            console.log(`[停止] 连续 ${noNewItemCount} 次未检测到新 item（且未进行删除），滚动停止。`);
             stopScrolling();
             isProcessing = false;
             return;
@@ -112,13 +154,16 @@ function scrollAndCount() {
 
 function startScrolling() {
     if (scrollIntervalId !== null) {
+        console.log("[信息] 滚动已在进行中。");
         return;
     }
+    console.log("[启动] 开始滚动...");
     isProcessing = false;
-    lastItemCount = 0;
-    noNewItemCount = 0;
-    processedItemCount = 0; // 重置已处理计数
-    scrollAndCount(); // 立即执行一次以处理初始项
+    lastItemCount = 0; // 重置上周期数量
+    noNewItemCount = 0; // 重置无新项计数
+    // processedItemCount = 0; // 不再需要此变量
+    sentItemIdentifiers.clear(); // 清空已发送 Set
+    scrollAndCount(); // 立即执行一次以处理初始项并开始循环
     scrollIntervalId = setInterval(scrollAndCount, checkInterval);
 }
 
