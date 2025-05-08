@@ -1,0 +1,2222 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>视频播放器</title>
+    <!-- 引入DPlayer的CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer@1.27.1/dist/DPlayer.min.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        .player-container {
+            width: 80%;
+            max-width: 1280px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+            position: relative;
+            /* 添加新属性 */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* 添加一个新的样式类用于竖屏视频 */
+        .portrait-video .dplayer {
+            max-width: 60%;
+            /* 竖屏视频使用较小的宽度 */
+            margin: 0 auto;
+        }
+
+        /* 响应式设计优化 */
+        @media (max-width: 768px) {
+            .player-container {
+                width: 95%;
+            }
+
+            .portrait-video .dplayer {
+                max-width: 85%;
+                /* 在移动设备上稍微扩大竖屏视频宽度 */
+            }
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .player-container {
+                width: 95%;
+            }
+        }
+
+        /* 字幕控制样式 */
+        .subtitle-controls {
+            padding: 10px;
+            background-color: rgba(0, 0, 0, 0.6);
+            color: white;
+            text-align: center;
+            margin-top: 10px;
+            border-radius: 4px;
+        }
+
+        .subtitle-btn {
+            background-color: #1E90FF;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 0 5px;
+        }
+
+        .subtitle-btn:hover {
+            background-color: #1976D2;
+        }
+
+        .subtitle-file {
+            display: none;
+        }
+
+        /* 添加状态信息样式 */
+        .player-status {
+            padding: 10px;
+            background-color: rgba(0, 0, 0, 0.6);
+            color: #fff;
+            font-size: 14px;
+            text-align: center;
+            margin-top: 10px;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* 进度条样式 */
+        .progress-container {
+            margin-top: 10px;
+            background-color: rgba(0, 0, 0, 0.6);
+            border-radius: 4px;
+            padding: 10px;
+            color: #fff;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 20px;
+            background-color: #333;
+            border-radius: 10px;
+            margin-top: 5px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(to right, #1E90FF, #39c5bb);
+            border-radius: 10px;
+            transition: width 0.3s ease;
+        }
+
+        .progress-text {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
+        }
+
+        .progress-stats {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 5px;
+            font-size: 14px;
+        }
+
+        .goal-message {
+            text-align: center;
+            margin-top: 8px;
+            font-style: italic;
+            color: #ccc;
+        }
+
+        /* 瀑布流字幕面板样式 */
+        .subtitle-flow-toggle {
+            background-color: #1E90FF;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 0 5px;
+        }
+
+        .subtitle-flow-toggle:hover {
+            background-color: #1976D2;
+        }
+
+        .subtitle-flow-panel {
+            position: fixed;
+            right: 0;
+            top: 0;
+            width: 300px;
+            height: 100vh;
+            background-color: rgba(0, 0, 0, 0.85);
+            color: white;
+            overflow-y: auto;
+            padding: 20px;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+            z-index: 1000;
+            box-shadow: -2px 0 10px rgba(0, 0, 0, 0.5);
+        }
+
+        .subtitle-flow-panel.active {
+            transform: translateX(0);
+        }
+
+        .subtitle-flow-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .subtitle-flow-close {
+            background: none;
+            border: none;
+            color: #ccc;
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        .subtitle-flow-content {
+            font-size: 16px;
+            line-height: 1.8;
+        }
+
+        .subtitle-cue {
+            margin-bottom: 15px;
+            padding: 8px;
+            border-radius: 5px;
+            transition: background-color 0.3s ease;
+        }
+
+        .subtitle-cue.active {
+            background-color: rgba(30, 144, 255, 0.3);
+        }
+
+        .subtitle-time {
+            display: block;
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 4px;
+        }
+
+        .subtitle-text {
+            display: block;
+        }
+
+        /* 视频源选择面板样式 */
+        .source-panel {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            z-index: 2000;
+            display: flex;
+            /* align-items: center; */
+            /* justify-content: center; */
+        }
+
+        .source-container {
+            width: 100%;
+            /* max-width: 500px; */
+            background-color: #1a1a1a;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+        }
+
+        .source-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+        }
+
+        .source-header h3 {
+            color: #fff;
+            margin: 0;
+        }
+
+        .source-close {
+            background: none;
+            border: none;
+            color: #ccc;
+            font-size: 24px;
+            cursor: pointer;
+        }
+
+        .source-tabs {
+            display: flex;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #333;
+        }
+
+        .source-tab {
+            padding: 10px 15px;
+            color: #ccc;
+            cursor: pointer;
+            background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            margin-right: 5px;
+            transition: all 0.3s ease;
+        }
+
+        .source-tab.active {
+            color: #1E90FF;
+            border-bottom: 2px solid #1E90FF;
+        }
+
+        .source-content {
+            padding: 10px 0;
+        }
+
+        .source-section {
+            display: none;
+        }
+
+        .source-section.active {
+            display: block;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        .input-group label {
+            display: block;
+            color: #ccc;
+            margin-bottom: 5px;
+        }
+
+        .input-group input[type="text"],
+        .input-group input[type="url"] {
+            width: 100%;
+            padding: 10px;
+            background-color: #333;
+            border: 1px solid #444;
+            color: #fff;
+            border-radius: 4px;
+        }
+
+        .btn-load {
+            background-color: #1E90FF;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        .btn-load:hover {
+            background-color: #1976D2;
+        }
+
+        .recent-videos {
+            margin-top: 20px;
+        }
+
+        .recent-videos h4 {
+            color: #ccc;
+            font-size: 14px;
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #333;
+        }
+
+        .recent-video-item {
+            padding: 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .recent-video-item:hover {
+            background-color: #333;
+        }
+
+        .recent-video-title {
+            color: #eee;
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-right: 10px;
+        }
+
+        .recent-video-type {
+            font-size: 12px;
+            color: #888;
+            padding: 2px 6px;
+            border-radius: 3px;
+            background-color: #444;
+        }
+
+        /* 添加视频源切换按钮 */
+        .change-source-btn {
+            background-color: #1E90FF;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 0 5px;
+            display: inline-block;
+        }
+
+        .change-source-btn:hover {
+            background-color: #1976D2;
+        }
+
+        /* 拖放区域样式 */
+        .drop-zone {
+            height: 69vh;
+            border: 2px dashed #666;
+            border-radius: 8px;
+            padding: 30px 20px;
+            text-align: center;
+            color: #ccc;
+            margin-bottom: 15px;
+            transition: all 0.3s ease;
+        }
+
+        .drop-zone.active {
+            border-color: #1E90FF;
+            background-color: rgba(30, 144, 255, 0.1);
+        }
+
+        .drop-zone-prompt {
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+
+        .drop-zone-browse {
+            color: #1E90FF;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+
+        /* 文件输入隐藏 */
+        .file-input {
+            display: none;
+        }
+
+        .subtitle-mappings-list {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-bottom: 15px;
+        }
+
+        .subtitle-mapping-item {
+            background-color: #333;
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .mapping-info {
+            flex: 1;
+        }
+
+        .mapping-video-name {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #fff;
+            word-break: break-word;
+        }
+
+        .mapping-subtitle-name {
+            color: #ccc;
+            font-size: 13px;
+            margin-bottom: 3px;
+        }
+
+        .mapping-date {
+            color: #888;
+            font-size: 12px;
+        }
+
+        .mapping-delete {
+            background-color: #d32f2f;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .mapping-delete:hover {
+            background-color: #b71c1c;
+        }
+
+        .empty-message,
+        .loading-message {
+            color: #888;
+            text-align: center;
+            padding: 20px 0;
+        }
+
+        /* 重命名表单样式 */
+        #target-filename {
+            background-color: #444;
+            color: #aaa;
+        }
+
+        .rename-result {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+
+        .rename-success {
+            background-color: rgba(76, 175, 80, 0.2);
+            color: #4CAF50;
+        }
+
+        .rename-error {
+            background-color: rgba(244, 67, 54, 0.2);
+            color: #F44336;
+        }
+
+        /* 响应式调整 */
+        @media (max-width: 768px) {
+            .subtitle-flow-panel {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 创建DPlayer容器 -->
+    <div class="player-container">
+
+        <!-- 瀑布流字幕面板 -->
+        <div id="subtitle-flow-panel" class="subtitle-flow-panel">
+            <div class="subtitle-flow-header">
+                <h3>字幕浏览</h3>
+                <button class="subtitle-flow-close" id="close-subtitle-flow">&times;</button>
+            </div>
+            <div class="subtitle-flow-content" id="subtitle-flow-content">
+                <!-- 字幕内容将动态添加到这里 -->
+            </div>
+        </div>
+
+        <!-- 视频源选择面板 -->
+        <div id="source-panel" class="source-panel">
+            <div class="source-container">
+                <div class="source-header">
+                    <h3>选择视频源</h3>
+                    <button class="source-close" id="close-source">&times;</button>
+                </div>
+
+                <div class="source-tabs">
+                    <button class="source-tab active" data-tab="local">本地文件</button>
+                    <button class="source-tab" data-tab="url">网络视频</button>
+                    <button class="source-tab" data-tab="history">最近观看</button>
+                    <button class="source-tab" data-tab="subtitles">字幕管理</button>
+                    <button class="source-tab" data-tab="rename">文件重命名</button>
+                </div>
+
+                <div class="source-content">
+                    <!-- 本地文件选项 -->
+                    <div class="source-section active" id="local-section">
+                        <div id="drop-zone" class="drop-zone">
+                            <div class="drop-zone-prompt">拖放文件到这里</div>
+                            <div>或者 <span class="drop-zone-browse" id="browse-files">浏览文件</span></div>
+                        </div>
+                        <input type="file" id="local-file" class="file-input"
+                            accept="video/mp4,video/webm,video/ogg,video/quicktime">
+                        <button class="btn-load" id="load-local">加载选中的文件</button>
+                    </div>
+
+                    <!-- 网络视频选项 -->
+                    <div class="source-section" id="url-section">
+                        <div class="input-group">
+                            <label for="video-url">视频URL</label>
+                            <input type="url" id="video-url" placeholder="请输入视频链接">
+                        </div>
+                        <button class="btn-load" id="load-url">加载网络视频</button>
+                    </div>
+
+                    <!-- 历史记录选项 -->
+                    <div class="source-section" id="history-section">
+                        <div class="recent-videos" id="recent-videos-list">
+                            <h4>最近观看的视频</h4>
+                            <!-- 历史记录将动态添加到这里 -->
+                        </div>
+                    </div>
+                    <!-- 字幕管理选项 - 直接添加到HTML结构中 -->
+                    <div class="source-section" id="subtitles-section">
+                        <div class="subtitle-management">
+                            <div id="subtitle-mappings-list" class="subtitle-mappings-list">
+                                <div class="loading-message">加载中...</div>
+                            </div>
+                            <button id="clear-subtitle-mappings" class="btn-load">清除所有字幕映射</button>
+                        </div>
+                    </div>
+                    <!-- 文件重命名选项 -->
+                    <div class="source-section" id="rename-section">
+                        <div class="input-group">
+                            <label for="source-filename">源文件名</label>
+                            <input type="text" id="source-filename" placeholder="例如: 1-7. Hooks.mp4">
+                        </div>
+                        <div class="input-group">
+                            <label for="target-filename">目标路径</label>
+                            <input type="text" id="target-filename" readonly>
+                        </div>
+                        <div class="option">
+                            <span style="color: white;">保留文件名序号前缀</span>
+                            <input type="checkbox" id="keepPrefix" checked>
+                            <label for="keepPrefix">保留文件名序号前缀</label>
+                        </div>
+                        <button class="btn-load" id="execute-rename">执行重命名</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 添加视频源切换按钮到字幕控制区 -->
+        <div class="subtitle-controls">
+            <input type="file" id="subtitle-file" class="subtitle-file" accept=".vtt,.srt,.ass">
+            <button id="import-subtitle" class="subtitle-btn">导入字幕</button>
+            <button id="toggle-subtitle" class="subtitle-btn">显示/隐藏字幕</button>
+            <button id="toggle-subtitle-flow" class="subtitle-flow-toggle">侧边字幕</button>
+            <button id="change-source" class="change-source-btn">更换视频</button>
+        </div>
+        <div id="dplayer"></div>
+
+        <div class="player-status" id="player-status">
+            <span id="status-time">加载中...</span>
+            <span id="status-subtitle">无字幕</span>
+        </div>
+        <div class="progress-container">
+            <div>观看进度</div>
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="progress-bar"></div>
+                <div class="progress-text" id="progress-percent">0%</div>
+            </div>
+            <div class="progress-stats">
+                <div id="watched-time">已观看: 00:00:00</div>
+                <div id="remaining-time">剩余: 00:00:00</div>
+            </div>
+            <div class="goal-message" id="goal-message">准备好完成这个视频了吗？</div>
+        </div>
+    </div>
+
+    <!-- 引入DPlayer的JS -->
+    <script src="https://cdn.jsdelivr.net/npm/dplayer@1.27.1/dist/DPlayer.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.4.6/dist/hls.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            // 当前视频的唯一标识符 - 使用视频名称作为标识
+            let videoPath = './第八章event.mp4';
+            let videoId = encodeURIComponent(videoPath); // 编码以便安全存储
+
+            // 从localStorage读取保存的播放时间和字幕信息
+            const savedState = getSavedState(videoId);
+            const lastPlayTime = savedState.lastTime || 0;
+            const lastSubtitle = savedState.subtitleContent || null;
+            const lastSubtitleName = savedState.subtitleName || null;
+            const subtitleVisible = savedState.subtitleVisible !== false; // 默认显示
+
+            // 初始化DPlayer
+            const dp = window.dp = new DPlayer({
+                container: document.getElementById('dplayer'),
+                autoplay: false,
+                theme: '#1E90FF',
+                loop: false,
+                lang: 'zh-cn',
+                screenshot: true,
+                hotkey: true,
+                preload: 'auto',
+                volume: savedState.volume || 0.7,
+                mutex: true,
+                video: {
+                    url: videoPath,
+                    type: 'auto',
+                    pic: '', // 可以添加封面图片的URL
+                },
+                subtitle: {
+                    url: '',
+                    type: 'webvtt',
+                    fontSize: '25px',
+                    bottom: '10%',
+                    color: '#fff',
+                }
+            });
+
+            // 设置之前保存的播放时间
+            dp.on('loadedmetadata', function () {
+                updateProgressInfo(dp.video.currentTime, dp.video.duration);
+
+                if (lastPlayTime > 0) {
+                    dp.seek(lastPlayTime);
+                    console.log(`恢复到上次播放位置: ${formatTime(lastPlayTime)}`);
+                    dp.notice(`恢复到上次播放位置: ${formatTime(lastPlayTime)}`, 3000);
+                }
+                // 添加视频宽高比检测
+                const videoRatio = dp.video.videoWidth / dp.video.videoHeight;
+                const playerContainer = document.querySelector('.player-container');
+
+                // 如果是竖屏视频(宽高比小于1)
+                if (videoRatio < 1) {
+                    playerContainer.classList.add('portrait-video');
+                    dp.notice('检测到竖屏视频，已优化显示', 3000);
+                } else {
+                    playerContainer.classList.remove('portrait-video');
+                }
+
+                // 强制重新计算播放器大小
+                setTimeout(() => {
+                    if (typeof dp.resize === 'function') {
+                        dp.resize();
+                    }
+                }, 200);
+            });
+
+            // 恢复之前保存的字幕内容(如果有)
+            if (lastSubtitle) {
+                setTimeout(() => {
+                    loadSubtitleContent(lastSubtitle, lastSubtitleName || "已保存字幕");
+                    // 根据保存的状态设置字幕可见性
+                    if (!subtitleVisible) {
+                        toggleSubtitleVisibility(false);
+                    }
+                }, 1000); // 延迟加载字幕，确保播放器已完全初始化
+            }
+
+            // 定期保存当前播放时间（每5秒）
+            let saveInterval = setInterval(() => {
+                if (dp.video.currentTime > 0) {
+                    saveCurrentState(videoId, dp.video.currentTime, dp.video.volume);
+                    updateStatusInfo(dp.video.currentTime, lastSubtitleName);
+                    updateProgressInfo(dp.video.currentTime, dp.video.duration);
+                }
+            }, 5000);
+
+            // 在离开页面前保存当前状态
+            window.addEventListener('beforeunload', () => {
+                saveCurrentState(videoId, dp.video.currentTime, dp.video.volume);
+            });
+
+            // 添加事件监听
+            dp.on('loadeddata', function () {
+                console.log('视频数据加载完成');
+            });
+
+            dp.on('error', function () {
+                console.error('视频加载出错，可能是路径或格式问题');
+            });
+
+            dp.on('timeupdate', function () {
+                // 当播放进度更新时，更新状态信息
+                updateStatusInfo(dp.video.currentTime, lastSubtitleName);
+                updateProgressInfo(dp.video.currentTime, dp.video.duration);
+            });
+
+            // 字幕功能
+            const subtitleFile = document.getElementById('subtitle-file');
+            const importSubtitleBtn = document.getElementById('import-subtitle');
+            const toggleSubtitleBtn = document.getElementById('toggle-subtitle');
+
+            // 导入字幕按钮点击事件
+            importSubtitleBtn.addEventListener('click', function () {
+                subtitleFile.click();
+            });
+
+            // 字幕文件选择后的处理
+            subtitleFile.addEventListener('change', function (e) {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                // 检查文件类型
+                const fileExt = file.name.split('.').pop().toLowerCase();
+                if (!['vtt', 'srt', 'ass'].includes(fileExt)) {
+                    alert('不支持的字幕文件格式，请使用.vtt、.srt或.ass格式');
+                    return;
+                }
+
+                // 读取字幕文件
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    const content = e.target.result;
+
+                    // 如果是SRT格式，需要转换为WebVTT
+                    let subtitleContent = content;
+                    if (fileExt === 'srt') {
+                        subtitleContent = convertSrtToVtt(content);
+                    } else if (fileExt === 'ass') {
+                        // ASS格式更复杂，仅做基本转换
+                        subtitleContent = convertAssToVtt(content);
+                    }
+
+                    // 加载字幕内容
+                    loadSubtitleContent(subtitleContent, file.name);
+
+                    // 保存字幕内容到localStorage
+                    saveSubtitleContent(videoId, subtitleContent, file.name, true);
+                    lastSubtitleName = file.name;
+                };
+                reader.readAsText(file);
+            });
+
+            // 切换字幕显示/隐藏
+            toggleSubtitleBtn.addEventListener('click', function () {
+                const isCurrentlyVisible = toggleSubtitleVisibility();
+                // 保存字幕可见性状态
+                const state = getSavedState(videoId);
+                state.subtitleVisible = isCurrentlyVisible;
+                localStorage.setItem(`video_${videoId}`, JSON.stringify(state));
+            });
+
+            function clearAllSubtitles() {
+                // 1. 清除DPlayer原生字幕容器
+                const subtitleContainer = document.querySelector('.dplayer-subtitle');
+                if (subtitleContainer) {
+                    subtitleContainer.innerHTML = '';
+                }
+
+                // 2. 清除video元素中的所有track元素
+                if (dp && dp.video) {
+                    const tracks = dp.video.querySelectorAll('track');
+                    tracks.forEach(track => track.remove());
+
+                    // 重置textTracks
+                    if (dp.video.textTracks && dp.video.textTracks.length > 0) {
+                        for (let i = 0; i < dp.video.textTracks.length; i++) {
+                            dp.video.textTracks[i].mode = 'disabled';
+                        }
+                    }
+                }
+
+                // 3. 重置DPlayer字幕相关状态
+                if (dp && dp.subtitle) {
+                    dp.options.subtitle.url = '';
+                    if (typeof dp.subtitle.hide === 'function') {
+                        dp.subtitle.hide();
+                    }
+                }
+
+                // 4. 清空侧边字幕面板内容
+                if (window.subtitleFlowContent) {
+                    subtitleFlowContent.innerHTML = '';
+                }
+
+                // 5. 重置全局字幕状态
+                window.subtitleCues = [];
+                window.activeSubtitleId = null;
+
+                // 6. 移除可能存在的动态创建的字幕样式
+                const subtitleStyles = document.querySelectorAll('style[data-subtitle]');
+                subtitleStyles.forEach(style => style.remove());
+            }
+
+
+            // 修改加载字幕内容的函数，增强清理和错误处理
+            function loadSubtitleContent(subtitleContent, fileName) {
+                try {
+                    // 先清除当前所有字幕
+                    clearAllSubtitles();
+
+                    // 创建Blob URL
+                    const blob = new Blob([subtitleContent], { type: 'text/vtt' });
+                    const url = URL.createObjectURL(blob);
+
+                    // 设置新的字幕URL
+                    dp.options.subtitle.url = url;
+
+                    // 尝试多种方式加载字幕
+                    let subtitleLoaded = false;
+
+                    // 方法1：使用DPlayer的API
+                    if (typeof dp.initSubtitle === 'function') {
+                        dp.initSubtitle();
+                        subtitleLoaded = true;
+                    }
+                    // 方法2：手动添加track元素
+                    else {
+                        // 确保video元素存在
+                        if (dp.video) {
+                            // 创建轨道元素
+                            const track = document.createElement('track');
+                            track.kind = 'subtitles';
+                            track.label = fileName;
+                            track.src = url;
+                            track.default = true;
+
+                            // 添加到视频元素
+                            dp.video.appendChild(track);
+
+                            // 确保字幕可见
+                            setTimeout(() => {
+                                if (dp.video.textTracks && dp.video.textTracks[0]) {
+                                    dp.video.textTracks[0].mode = 'showing';
+                                }
+                            }, 100);
+
+                            subtitleLoaded = true;
+                        }
+                    }
+
+                    // 更新状态信息
+                    updateStatusInfo(dp.video.currentTime, fileName);
+
+                    // 添加字幕到瀑布流面板
+                    const fileExt = fileName.split('.').pop().toLowerCase();
+                    if (fileExt === 'vtt' || fileExt === 'srt' || fileExt === 'ass') {
+                        parseSubtitleForFlow(subtitleContent, 'vtt');
+                    }
+
+                    // 显示通知
+                    if (subtitleLoaded) {
+                        dp.notice(`已加载字幕: ${fileName}`, 3000);
+                    } else {
+                        dp.notice(`字幕加载可能不完整: ${fileName}`, 3000);
+                    }
+
+                    return subtitleLoaded;
+                } catch (error) {
+                    console.error('加载字幕时出错:', error);
+                    dp.notice(`字幕加载失败: ${error.message}`, 3000);
+                    return false;
+                }
+            }
+
+            // 修改切换字幕显示/隐藏的函数，确保正确处理字幕状态
+            function toggleSubtitleVisibility(forceState = null) {
+                // forceState: true=显示, false=隐藏, null=切换
+                let newState;
+
+                if (forceState !== null) {
+                    newState = forceState;
+                } else {
+                    // 获取当前状态
+                    const state = getSavedState(videoId);
+                    newState = !(state.subtitleVisible !== false); // 取反
+                }
+
+                // 更新记忆中的字幕可见状态
+                const state = getSavedState(videoId);
+                state.subtitleVisible = newState;
+                localStorage.setItem(`video_${videoId}`, JSON.stringify(state));
+
+                // 同时更新映射中的状态
+                if (subtitleMappings[videoId]) {
+                    subtitleMappings[videoId].visible = newState;
+                    localStorage.setItem('subtitleMappings', JSON.stringify(subtitleMappings));
+                }
+
+                // 应用字幕显示/隐藏
+                if (newState) {
+                    // 显示字幕 - 尝试多种方法
+                    if (dp.subtitle && typeof dp.subtitle.show === 'function') {
+                        dp.subtitle.show();
+                    }
+
+                    // 通过TextTrack API显示字幕
+                    if (dp.video && dp.video.textTracks) {
+                        for (let i = 0; i < dp.video.textTracks.length; i++) {
+                            dp.video.textTracks[i].mode = 'showing';
+                        }
+                    }
+
+                    // 通过CSS显示DPlayer字幕
+                    const subtitleElement = document.querySelector('.dplayer-subtitle');
+                    if (subtitleElement) {
+                        subtitleElement.style.display = 'block';
+                    }
+
+                    dp.notice('字幕已显示', 2000);
+                } else {
+                    // 隐藏字幕 - 尝试多种方法
+                    if (dp.subtitle && typeof dp.subtitle.hide === 'function') {
+                        dp.subtitle.hide();
+                    }
+
+                    // 通过TextTrack API隐藏字幕
+                    if (dp.video && dp.video.textTracks) {
+                        for (let i = 0; i < dp.video.textTracks.length; i++) {
+                            dp.video.textTracks[i].mode = 'hidden';
+                        }
+                    }
+
+                    // 通过CSS隐藏DPlayer字幕
+                    const subtitleElement = document.querySelector('.dplayer-subtitle');
+                    if (subtitleElement) {
+                        subtitleElement.style.display = 'none';
+                    }
+
+                    dp.notice('字幕已隐藏', 2000);
+                }
+
+                return newState;
+            }
+
+            // 添加事件监听器，确保在视频元数据加载后重新应用字幕状态
+            if (dp) {
+                dp.on('loadedmetadata', function () {
+                    // 视频元数据加载完成，确保清理任何残留字幕
+                    clearAllSubtitles();
+                });
+            }
+            // 函数：从localStorage获取保存的状态
+            function getSavedState(videoId) {
+                const savedItem = localStorage.getItem(`video_${videoId}`);
+                if (savedItem) {
+                    try {
+                        return JSON.parse(savedItem);
+                    } catch (e) {
+                        console.error("无法解析保存的视频状态", e);
+                    }
+                }
+                return {};
+            }
+
+            // 函数：保存当前状态到localStorage
+            function saveCurrentState(videoId, currentTime, volume) {
+                const state = getSavedState(videoId);
+                state.lastTime = currentTime;
+                state.volume = volume;
+                localStorage.setItem(`video_${videoId}`, JSON.stringify(state));
+            }
+
+            // 函数：保存字幕内容到localStorage
+            // 修改保存字幕内容的函数，添加检查以避免重复保存
+            function saveSubtitleContent(videoId, subtitleContent, subtitleName, isVisible) {
+                // 检查是否已存在相同内容的字幕，避免重复保存
+                const state = getSavedState(videoId);
+                const isSameSubtitle = state.subtitleContent === subtitleContent &&
+                    state.subtitleName === subtitleName &&
+                    state.subtitleVisible === isVisible;
+
+                // 如果字幕内容相同，仅更新时间戳
+                if (isSameSubtitle && subtitleMappings[videoId]) {
+                    subtitleMappings[videoId].timestamp = Date.now();
+                    localStorage.setItem('subtitleMappings', JSON.stringify(subtitleMappings));
+                    return;
+                }
+
+                // 保存到视频的状态中
+                state.subtitleContent = subtitleContent;
+                state.subtitleName = subtitleName;
+                state.subtitleVisible = isVisible;
+                localStorage.setItem(`video_${videoId}`, JSON.stringify(state));
+
+                // 同时更新全局字幕映射表
+                subtitleMappings[videoId] = {
+                    content: subtitleContent,
+                    name: subtitleName,
+                    visible: isVisible,
+                    timestamp: Date.now()
+                };
+
+                // 保存映射表
+                localStorage.setItem('subtitleMappings', JSON.stringify(subtitleMappings));
+
+                // 在控制台记录保存操作
+                console.log(`已保存字幕: ${subtitleName} -> ${videoId}`);
+            }
+
+            // 函数：更新状态显示
+            function updateStatusInfo(currentTime, subtitleName) {
+                const timeElem = document.getElementById('status-time');
+                const subtitleElem = document.getElementById('status-subtitle');
+
+                if (timeElem) {
+                    const timeStr = formatTime(currentTime);
+                    timeElem.textContent = `当前进度: ${timeStr}`;
+                }
+
+                if (subtitleElem) {
+                    subtitleElem.textContent = subtitleName ? `字幕: ${subtitleName}` : '无字幕';
+                }
+            }
+
+            // 函数：更新进度信息
+            function updateProgressInfo(currentTime, totalTime) {
+                if (!totalTime || isNaN(totalTime) || totalTime <= 0) return;
+
+                const progressBar = document.getElementById('progress-bar');
+                const progressText = document.getElementById('progress-percent');
+                const watchedTimeElem = document.getElementById('watched-time');
+                const remainingTimeElem = document.getElementById('remaining-time');
+                const goalMessageElem = document.getElementById('goal-message');
+
+                // 计算百分比
+                const percent = Math.min(100, (currentTime / totalTime) * 100);
+                const remainingTime = Math.max(0, totalTime - currentTime);
+
+                // 更新进度条和文本
+                if (progressBar) progressBar.style.width = percent + '%';
+                if (progressText) progressText.textContent = percent.toFixed(1) + '%';
+
+                // 更新观看时间和剩余时间
+                if (watchedTimeElem) {
+                    watchedTimeElem.textContent = `已观看: ${formatTime(currentTime)}`;
+                }
+
+                if (remainingTimeElem) {
+                    remainingTimeElem.textContent = `剩余: ${formatTime(remainingTime)}`;
+                }
+
+                // 根据进度更新激励信息
+                if (goalMessageElem) {
+                    let message = '';
+                    if (percent < 10) {
+                        message = '开始新的学习旅程，继续加油！';
+                    } else if (percent < 25) {
+                        message = '已完成四分之一，保持这种节奏！';
+                    } else if (percent < 50) {
+                        message = '快到一半了，继续前进！';
+                    } else if (percent < 75) {
+                        message = '已超过一半，离目标更近了！';
+                    } else if (percent < 90) {
+                        message = '即将完成，坚持就是胜利！';
+                    } else if (percent < 100) {
+                        message = '就差一点点了，冲刺阶段！';
+                    } else {
+                        message = '恭喜完成学习，太棒了！';
+                    }
+                    goalMessageElem.textContent = message;
+                }
+            }
+
+            // 函数：格式化时间显示
+            function formatTime(seconds) {
+                if (!seconds) return '00:00:00';
+                seconds = Math.floor(seconds);
+                const h = Math.floor(seconds / 3600);
+                const m = Math.floor((seconds % 3600) / 60);
+                const s = Math.floor(seconds % 60);
+                return [
+                    h.toString().padStart(2, '0'),
+                    m.toString().padStart(2, '0'),
+                    s.toString().padStart(2, '0')
+                ].join(':');
+            }
+
+            // 将SRT格式转换为WebVTT格式
+            function convertSrtToVtt(srtContent) {
+                // 添加WEBVTT头
+                let vttContent = 'WEBVTT\n\n';
+
+                // 处理时间格式: 00:00:00,000 -> 00:00:00.000
+                srtContent = srtContent.replace(/(\d{2}):(\d{2}):(\d{2}),(\d{3})/g, '$1:$2:$3.$4');
+
+                // 移除序号行
+                const lines = srtContent.split('\n');
+                let inCue = false;
+                let outputLines = [];
+
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i].trim();
+
+                    // 忽略纯数字行（序号）
+                    if (/^\d+$/.test(line)) {
+                        continue;
+                    }
+
+                    // 处理时间行
+                    if (line.includes('-->')) {
+                        inCue = true;
+                        outputLines.push(line);
+                        continue;
+                    }
+
+                    // 处理字幕内容或空行
+                    if (inCue || line === '') {
+                        outputLines.push(line);
+                        if (line === '') {
+                            inCue = false;
+                        }
+                    }
+                }
+
+                return vttContent + outputLines.join('\n');
+            }
+
+            // 将ASS格式转换为WebVTT格式（简化版）
+            function convertAssToVtt(assContent) {
+                // 添加WEBVTT头
+                let vttContent = 'WEBVTT\n\n';
+
+                // 简单解析[Events]部分的Dialogue行
+                const lines = assContent.split('\n');
+                let inEvents = false;
+                let formatLine = '';
+                let cueIndex = 1;
+
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i].trim();
+
+                    // 进入[Events]部分
+                    if (line === '[Events]') {
+                        inEvents = true;
+                        continue;
+                    }
+
+                    // 提取Format行
+                    if (inEvents && line.startsWith('Format:')) {
+                        formatLine = line.replace('Format:', '').trim();
+                        continue;
+                    }
+
+                    // 处理Dialogue行
+                    if (inEvents && line.startsWith('Dialogue:')) {
+                        const dialogueParts = line.replace('Dialogue:', '').trim().split(',');
+                        const formatParts = formatLine.split(',');
+
+                        // 查找Start、End和Text字段的索引
+                        let startIndex = formatParts.findIndex(part => part.trim() === 'Start');
+                        let endIndex = formatParts.findIndex(part => part.trim() === 'End');
+                        let textIndex = formatParts.findIndex(part => part.trim() === 'Text');
+
+                        if (startIndex !== -1 && endIndex !== -1 && textIndex !== -1) {
+                            // 提取时间和文本
+                            let startTime = dialogueParts[startIndex].trim();
+                            let endTime = dialogueParts[endIndex].trim();
+
+                            // 从文本索引到末尾的所有内容合并为文本
+                            let text = dialogueParts.slice(textIndex).join(',');
+
+                            // 转换ASS时间格式 (H:MM:SS.cc) 到 WebVTT (HH:MM:SS.mmm)
+                            startTime = convertAssTimeToVtt(startTime);
+                            endTime = convertAssTimeToVtt(endTime);
+
+                            // 移除格式标签 {\\tag}
+                            text = text.replace(/{\\[^}]*}/g, '');
+
+                            // 添加到WebVTT
+                            vttContent += cueIndex + '\n';
+                            vttContent += startTime + ' --> ' + endTime + '\n';
+                            vttContent += text + '\n\n';
+
+                            cueIndex++;
+                        }
+                    }
+                }
+
+                return vttContent;
+            }
+
+            // 将ASS时间格式转换为WebVTT时间格式
+            function convertAssTimeToVtt(assTime) {
+                // ASS: H:MM:SS.cc (小时可能是1位，百分之一秒)
+                // WebVTT: HH:MM:SS.mmm (小时必须是2位，毫秒)
+                const parts = assTime.split(':');
+
+                if (parts.length !== 3) return assTime;
+
+                let hours = parts[0].padStart(2, '0');
+                let minutes = parts[1];
+
+                // 处理秒和百分之一秒
+                let secondsParts = parts[2].split('.');
+                let seconds = secondsParts[0];
+
+                // 将百分之一秒转换为毫秒（如果有的话）
+                let milliseconds = '000';
+                if (secondsParts.length > 1) {
+                    milliseconds = (parseInt(secondsParts[1]) * 10).toString().padEnd(3, '0');
+                }
+
+                return `${hours}:${minutes}:${seconds}.${milliseconds}`;
+            }
+
+
+            // 瀑布流字幕功能
+            const toggleSubtitleFlowBtn = document.getElementById('toggle-subtitle-flow');
+            const subtitleFlowPanel = document.getElementById('subtitle-flow-panel');
+            const closeSubtitleFlowBtn = document.getElementById('close-subtitle-flow');
+            const subtitleFlowContent = document.getElementById('subtitle-flow-content');
+            let subtitleCues = []; // 存储所有字幕条目
+            let activeSubtitleId = null; // 当前活动的字幕ID
+
+            // 切换瀑布流字幕面板
+            toggleSubtitleFlowBtn.addEventListener('click', function () {
+                subtitleFlowPanel.classList.toggle('active');
+            });
+
+            // 关闭瀑布流字幕面板
+            closeSubtitleFlowBtn.addEventListener('click', function () {
+                subtitleFlowPanel.classList.remove('active');
+            });
+
+            // 解析字幕内容并填充瀑布流面板
+            function parseSubtitleForFlow(content, format) {
+                // 清空先前的内容
+                subtitleFlowContent.innerHTML = '';
+                subtitleCues = [];
+
+                let lines = content.split('\n');
+                let cues = [];
+
+                if (format === 'vtt') {
+                    // 跳过WEBVTT头
+                    let i = 0;
+                    while (i < lines.length && !lines[i].includes('-->')) {
+                        i++;
+                    }
+
+                    // 解析VTT格式
+                    let currentCue = null;
+                    for (; i < lines.length; i++) {
+                        const line = lines[i].trim();
+
+                        if (line.includes('-->')) {
+                            // 这是时间行
+                            const timeParts = line.split('-->').map(part => part.trim());
+                            currentCue = {
+                                startTime: parseTimeToSeconds(timeParts[0]),
+                                endTime: parseTimeToSeconds(timeParts[1]),
+                                text: ''
+                            };
+                        } else if (line === '' && currentCue) {
+                            // 空行表示一个字幕结束
+                            if (currentCue.text) {
+                                cues.push(currentCue);
+                            }
+                            currentCue = null;
+                        } else if (currentCue) {
+                            // 这是字幕文本
+                            if (currentCue.text) {
+                                currentCue.text += '\n' + line;
+                            } else {
+                                currentCue.text = line;
+                            }
+                        }
+                    }
+
+                    // 添加最后一个字幕
+                    if (currentCue && currentCue.text) {
+                        cues.push(currentCue);
+                    }
+                }
+
+                // 将解析后的字幕添加到瀑布流面板中
+                subtitleCues = cues;
+
+                cues.forEach((cue, index) => {
+                    const cueElement = document.createElement('div');
+                    cueElement.className = 'subtitle-cue';
+                    cueElement.id = `subtitle-cue-${index}`;
+                    cueElement.innerHTML = `
+                        <span class="subtitle-time">${formatTime(cue.startTime)} - ${formatTime(cue.endTime)}</span>
+                        <span class="subtitle-text">${cue.text}</span>
+                    `;
+
+                    // 点击字幕跳转到对应时间点
+                    cueElement.addEventListener('click', () => {
+                        dp.seek(cue.startTime);
+                        dp.play();
+                    });
+
+                    subtitleFlowContent.appendChild(cueElement);
+                });
+            }
+
+            // 将时间格式解析为秒数
+            function parseTimeToSeconds(timeStr) {
+                const parts = timeStr.split(':');
+                let hours = 0, minutes = 0, seconds = 0;
+
+                if (parts.length === 3) {
+                    hours = parseInt(parts[0]);
+                    minutes = parseInt(parts[1]);
+                    seconds = parseFloat(parts[2].replace(',', '.'));
+                } else if (parts.length === 2) {
+                    minutes = parseInt(parts[0]);
+                    seconds = parseFloat(parts[1].replace(',', '.'));
+                }
+
+                return hours * 3600 + minutes * 60 + seconds;
+            }
+
+            // 更新当前播放位置对应的字幕高亮显示
+            function updateActiveSubtitle(currentTime) {
+                // 查找当前时间应该显示的字幕
+                const activeCue = subtitleCues.find(cue =>
+                    currentTime >= cue.startTime && currentTime < cue.endTime
+                );
+
+                // 如果找到了活动字幕，且不是当前高亮的
+                if (activeCue) {
+                    const index = subtitleCues.indexOf(activeCue);
+                    const newActiveId = `subtitle-cue-${index}`;
+
+                    if (newActiveId !== activeSubtitleId) {
+                        // 移除旧的高亮
+                        if (activeSubtitleId) {
+                            const oldActive = document.getElementById(activeSubtitleId);
+                            if (oldActive) oldActive.classList.remove('active');
+                        }
+
+                        // 设置新的高亮
+                        const newActive = document.getElementById(newActiveId);
+                        if (newActive) {
+                            newActive.classList.add('active');
+
+                            // 滚动到可视区域
+                            newActive.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+
+                        activeSubtitleId = newActiveId;
+                    }
+                }
+            }
+
+            // 扩展现有的字幕加载函数
+            const originalLoadSubtitleContent = loadSubtitleContent;
+            loadSubtitleContent = function (subtitleContent, fileName) {
+                // 调用原始加载函数
+                const result = originalLoadSubtitleContent(subtitleContent, fileName);
+
+                // 处理瀑布流字幕
+                const fileExt = fileName.split('.').pop().toLowerCase();
+                if (fileExt === 'vtt' || fileExt === 'srt' || fileExt === 'ass') {
+                    parseSubtitleForFlow(subtitleContent, 'vtt');
+                }
+
+                return result;
+            };
+
+            // 添加到现有的timeupdate事件处理
+            dp.on('timeupdate', function () {
+                // 现有代码保持不变
+                updateStatusInfo(dp.video.currentTime, lastSubtitleName);
+                updateProgressInfo(dp.video.currentTime, dp.video.duration);
+
+                // 更新瀑布流字幕的活动状态
+                updateActiveSubtitle(dp.video.currentTime);
+            });
+
+
+
+            // 视频源选择功能
+            const sourcePanel = document.getElementById('source-panel');
+            const changeSourceBtn = document.getElementById('change-source');
+            const closeSourceBtn = document.getElementById('close-source');
+            const sourceTabs = document.querySelectorAll('.source-tab');
+            const sourceSections = document.querySelectorAll('.source-section');
+            const dropZone = document.getElementById('drop-zone');
+            const browseFilesBtn = document.getElementById('browse-files');
+            const localFileInput = document.getElementById('local-file');
+            const loadLocalBtn = document.getElementById('load-local');
+            const videoUrlInput = document.getElementById('video-url');
+            const loadUrlBtn = document.getElementById('load-url');
+            const recentVideosList = document.getElementById('recent-videos-list');
+
+            let selectedLocalFile = null;
+
+            // 初始加载时检查是否有视频
+            window.addEventListener('DOMContentLoaded', () => {
+                // 检查是否有保存的最近视频
+                loadRecentVideos();
+
+                // 如果没有视频源，则显示选择面板
+                if (!videoPath || videoPath === './第八章event.mp4') {
+                    setTimeout(() => {
+                        sourcePanel.style.display = 'flex';
+                    }, 500);
+                } else {
+                    sourcePanel.style.display = 'none';
+                }
+            });
+
+            // 打开选择视频源面板
+            changeSourceBtn.addEventListener('click', () => {
+                sourcePanel.style.display = 'flex';
+                loadRecentVideos(); // 重新加载最近视频列表
+            });
+
+            // 关闭选择视频源面板
+            closeSourceBtn.addEventListener('click', () => {
+                sourcePanel.style.display = 'none';
+            });
+
+            // 选项卡切换
+            sourceTabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    // 移除所有选项卡的active类
+                    sourceTabs.forEach(t => t.classList.remove('active'));
+                    // 添加当前选项卡的active类
+                    tab.classList.add('active');
+
+                    // 隐藏所有内容区域
+                    sourceSections.forEach(section => section.classList.remove('active'));
+                    // 显示对应内容区域
+                    const targetId = tab.getAttribute('data-tab') + '-section';
+                    document.getElementById(targetId).classList.add('active');
+                });
+            });
+
+            // 拖放文件功能
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }, false);
+            });
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => {
+                    dropZone.classList.add('active');
+                }, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => {
+                    dropZone.classList.remove('active');
+                }, false);
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                const files = e.dataTransfer.files;
+                if (files.length) {
+                    handleSelectedFile(files[0]);
+                }
+            }, false);
+
+            // 浏览文件按钮
+            browseFilesBtn.addEventListener('click', () => {
+                localFileInput.click();
+            });
+
+            // 本地文件选择
+            localFileInput.addEventListener('change', (e) => {
+                if (e.target.files.length) {
+                    handleSelectedFile(e.target.files[0]);
+                }
+            });
+
+            // 处理选中的文件
+            function handleSelectedFile(file) {
+                if (file.type.startsWith('video/')) {
+                    selectedLocalFile = file;
+                    dropZone.innerHTML = `<div class="drop-zone-prompt">已选择: ${file.name}</div>`;
+                    loadLocalBtn.textContent = `加载 "${file.name.length > 25 ? file.name.substring(0, 22) + '...' : file.name}"`;
+                    loadLocalBtn.click();
+                } else {
+                    alert('请选择视频文件');
+                }
+            }
+
+            // 增强的本地文件处理功能，使用File System Access API
+            let lastLocalFileHandle = null;  // 存储文件句柄
+
+            // 修改本地视频加载函数
+            loadLocalBtn.addEventListener('click', async () => {
+                if (selectedLocalFile) {
+                    const objectURL = URL.createObjectURL(selectedLocalFile);
+                    // 直接加载选中的文件，不尝试获取文件句柄
+                    loadVideo(objectURL, selectedLocalFile.name, 'local');
+                }
+
+            });
+
+            // 获取文件句柄
+            async function getFileHandle(file) {
+                // 请求用户授权获取文件句柄
+                const opts = {
+                    types: [
+                        {
+                            description: '视频文件',
+                            accept: {
+                                'video/*': ['.mp4', '.webm', '.ogg', '.mov']
+                            }
+                        }
+                    ],
+                    excludeAcceptAllOption: false,
+                    multiple: false
+                };
+
+                const [handle] = await window.showOpenFilePicker(opts);
+                // 验证是否是相同文件
+                const fileFromHandle = await handle.getFile();
+                if (fileFromHandle.name === file.name && fileFromHandle.size === file.size) {
+                    return handle;
+                } else {
+                    throw new Error('选择的文件与期望的文件不匹配');
+                }
+            }
+
+            // 保存文件句柄信息
+            function saveFileHandleInfo(fileName) {
+                const recentVideos = JSON.parse(localStorage.getItem('recentVideos') || '[]');
+                // 找到对应的视频记录
+                const videoIndex = recentVideos.findIndex(v => v.name === fileName && v.type === 'local');
+                if (videoIndex !== -1) {
+                    // 更新状态，标记为可能有文件句柄
+                    recentVideos[videoIndex].hasFileHandle = true;
+                    localStorage.setItem('recentVideos', JSON.stringify(recentVideos));
+                }
+            }
+
+            // 加载URL视频
+            loadUrlBtn.addEventListener('click', () => {
+                const url = videoUrlInput.value.trim();
+                if (url) {
+                    try {
+                        new URL(url); // 验证URL格式
+                        const videoName = extractVideoNameFromUrl(url);
+                        loadVideo(url, videoName, 'url');
+                    } catch (e) {
+                        alert('请输入有效的URL');
+                    }
+                } else {
+                    alert('请输入视频URL');
+                }
+            });
+
+            // 从URL中提取视频名称
+            function extractVideoNameFromUrl(url) {
+                try {
+                    const urlObj = new URL(url);
+                    const pathname = urlObj.pathname;
+                    const segments = pathname.split('/');
+                    const lastSegment = segments[segments.length - 1];
+
+                    if (lastSegment) {
+                        return decodeURIComponent(lastSegment);
+                    }
+
+                    return '网络视频';
+                } catch (e) {
+                    return '网络视频';
+                }
+            }
+
+            function loadVideo(src, name, type) {
+                // 保存当前视频的字幕状态（如果有）
+                if (dp && videoId) {
+                    const currentSubtitleState = getSavedState(videoId);
+                    if (currentSubtitleState.subtitleContent) {
+                        // 确保映射表中有当前视频的字幕信息
+                        subtitleMappings[videoId] = {
+                            content: currentSubtitleState.subtitleContent,
+                            name: currentSubtitleState.subtitleName,
+                            visible: currentSubtitleState.subtitleVisible !== false,
+                            timestamp: Date.now()
+                        };
+                        localStorage.setItem('subtitleMappings', JSON.stringify(subtitleMappings));
+                    }
+                }
+
+                // 先清除当前所有字幕轨道和元素
+                clearAllSubtitles();
+
+                // 保存到最近视频列表
+                saveToRecentVideos(src, name, type);
+
+                // 更新播放器源
+                dp.switchVideo({
+                    url: src,
+                    type: 'auto'
+                });
+
+                // 关闭源选择面板
+                sourcePanel.style.display = 'none';
+
+                // 更新视频ID和标题
+                const oldVideoId = videoId;
+                videoPath = src;
+                videoId = encodeURIComponent(name);
+                document.title = `视频播放器 - ${name}`;
+
+                // 加载视频保存状态
+                const savedState = getSavedState(videoId);
+
+                // 如果视频有保存的播放位置，恢复
+                if (savedState.lastTime) {
+                    dp.seek(savedState.lastTime);
+                    dp.notice(`恢复到上次播放位置: ${formatTime(savedState.lastTime)}`, 3000);
+                } else {
+                    dp.seek(0); // 如果是新视频则从头开始
+                }
+
+                // 确保字幕加载前有足够的延迟，让视频和播放器完全准备好
+                setTimeout(() => {
+                    // 检查字幕加载优先级 - 先检查是否已有缓存字幕
+                    const hasCachedSubtitle = checkAndLoadCachedSubtitle();
+
+                    // 如果没有找到缓存字幕，再尝试其他方法
+                    if (!hasCachedSubtitle) {
+                        // 检查视频保存状态
+                        if (savedState.subtitleContent) {
+                            loadSubtitleContent(savedState.subtitleContent, savedState.subtitleName || "已保存字幕");
+                            if (savedState.subtitleVisible === false) {
+                                toggleSubtitleVisibility(false);
+                            }
+                        }
+                        // 如果没有，尝试按命名模式匹配字幕
+                        else {
+                            tryMatchSubtitleByNaming(name);
+                        }
+                    }
+                }, 1500);
+            }
+
+            // 检查并加载缓存的字幕
+            function checkAndLoadCachedSubtitle() {
+                // 先检查本地存储的视频状态中是否有字幕
+                const savedState = getSavedState(videoId);
+                const subtitleMapping = subtitleMappings[videoId];
+
+                // 检查顺序：1. 视频状态中的字幕, 2. 映射表中的字幕
+                if (savedState.subtitleContent) {
+                    loadSubtitleContent(savedState.subtitleContent, savedState.subtitleName || "已保存字幕");
+                    if (savedState.subtitleVisible === false) {
+                        toggleSubtitleVisibility(false);
+                    }
+                    dp.notice(`已加载视频关联字幕: ${savedState.subtitleName || "未命名字幕"}`, 3000);
+                    return true;
+                } else if (subtitleMapping) {
+                    loadSubtitleContent(subtitleMapping.content, subtitleMapping.name || "已关联字幕");
+                    if (subtitleMapping.visible === false) {
+                        toggleSubtitleVisibility(false);
+                    }
+
+                    // 将映射中的字幕信息保存到视频状态中，避免重复查询映射表
+                    saveSubtitleContent(videoId, subtitleMapping.content, subtitleMapping.name, subtitleMapping.visible);
+
+                    dp.notice(`已自动加载关联字幕: ${subtitleMapping.name || "未命名字幕"}`, 3000);
+                    return true;
+                }
+
+                return false;
+            }
+
+            // 保存到最近视频列表
+            function saveToRecentVideos(src, name, type) {
+                let recentVideos = JSON.parse(localStorage.getItem('recentVideos') || '[]');
+
+                // 如果已存在同名视频，先移除
+                recentVideos = recentVideos.filter(video => video.name !== name);
+
+                // 添加到列表开头
+                recentVideos.unshift({
+                    src: type === 'local' ? name : src, // 本地文件只保存名称，不保存blob URL
+                    name: name,
+                    type: type,
+                    timestamp: Date.now()
+                });
+
+                // 限制列表长度为10
+                if (recentVideos.length > 10) {
+                    recentVideos = recentVideos.slice(0, 10);
+                }
+
+                localStorage.setItem('recentVideos', JSON.stringify(recentVideos));
+            }
+
+            // 修改历史记录中本地视频的点击处理
+            function loadRecentVideos() {
+                const recentVideos = JSON.parse(localStorage.getItem('recentVideos') || '[]');
+
+                // 清空列表
+                while (recentVideosList.children.length > 1) {
+                    recentVideosList.removeChild(recentVideosList.lastChild);
+                }
+
+                if (recentVideos.length === 0) {
+                    const emptyMessage = document.createElement('div');
+                    emptyMessage.textContent = '暂无观看记录';
+                    emptyMessage.style.color = '#888';
+                    emptyMessage.style.textAlign = 'center';
+                    emptyMessage.style.padding = '15px 0';
+                    recentVideosList.appendChild(emptyMessage);
+                    return;
+                }
+
+                // 添加视频项
+                recentVideos.forEach(video => {
+                    const item = document.createElement('div');
+                    item.className = 'recent-video-item';
+
+                    const title = document.createElement('div');
+                    title.className = 'recent-video-title';
+                    title.textContent = video.name;
+
+                    const type = document.createElement('div');
+                    type.className = 'recent-video-type';
+                    type.textContent = video.type === 'local' ? '本地' : '网络';
+
+                    item.appendChild(title);
+                    item.appendChild(type);
+
+                    // 点击加载视频
+                    item.addEventListener('click', async () => {
+                        if (video.type === 'local') {
+                            // 去掉自动尝试使用File System Access API的代码
+                            // 直接提示用户需要重新选择文件
+                            alert(`请重新选择本地文件: ${video.name}`);
+                            sourceTabs[0].click();
+
+                            // 自动打开文件选择对话框，提高用户体验
+                            setTimeout(() => {
+                                if (localFileInput) localFileInput.click();
+                            }, 500);
+
+                        } else {
+                            // 网络视频可以直接加载
+                            loadVideo(video.src, video.name, 'url');
+                        }
+                    });
+
+                    recentVideosList.appendChild(item);
+                });
+            }
+
+
+            // 视频切换时需要更新原始videoPath变量以保持兼容性
+            videoPath = document.querySelector('script').textContent.match(/videoPath\s*=\s*['"]([^'"]+)['"]/)?.[1] || './第八章event.mp4';
+            videoId = encodeURIComponent(videoPath);
+            // 视频字幕映射存储
+            let subtitleMappings = {};
+
+            // 初始化时加载保存的字幕映射
+            window.addEventListener('DOMContentLoaded', () => {
+                // 加载保存的字幕映射关系
+                const savedSubtitleMappings = localStorage.getItem('subtitleMappings');
+                if (savedSubtitleMappings) {
+                    try {
+                        subtitleMappings = JSON.parse(savedSubtitleMappings);
+                    } catch (e) {
+                        console.error('无法解析保存的字幕映射', e);
+                        subtitleMappings = {};
+                    }
+                }
+            });
+
+            // 修改保存字幕内容的函数，将字幕与视频建立关联
+            function saveSubtitleContent(videoId, subtitleContent, subtitleName, isVisible) {
+                // 保存到视频的状态中
+                const state = getSavedState(videoId);
+                state.subtitleContent = subtitleContent;
+                state.subtitleName = subtitleName;
+                state.subtitleVisible = isVisible;
+                localStorage.setItem(`video_${videoId}`, JSON.stringify(state));
+
+                // 同时更新全局字幕映射表
+                subtitleMappings[videoId] = {
+                    content: subtitleContent,
+                    name: subtitleName,
+                    visible: isVisible,
+                    timestamp: Date.now()
+                };
+
+                // 保存映射表
+                localStorage.setItem('subtitleMappings', JSON.stringify(subtitleMappings));
+            }
+            // 尝试根据视频名称匹配字幕
+            function tryMatchSubtitleByNaming(videoName) {
+                // 从映射中查找可能匹配的字幕
+                const baseName = getBaseName(videoName);
+
+                // 如果基本名称为空，不进行匹配
+                if (!baseName) return;
+
+                let bestMatch = null;
+                let highestSimilarity = 0;
+
+                // 遍历所有已保存的字幕，查找相似名称
+                for (const [vid, subtitle] of Object.entries(subtitleMappings)) {
+                    const decodedVid = decodeURIComponent(vid);
+                    const subtitleBaseName = getBaseName(decodedVid);
+
+                    // 计算名称相似度
+                    const similarity = calculateSimilarity(baseName, subtitleBaseName);
+                    if (similarity > 0.7 && similarity > highestSimilarity) {  // 70%以上的相似度认为可能是匹配的
+                        highestSimilarity = similarity;
+                        bestMatch = subtitle;
+                    }
+                }
+
+                // 如果找到可能匹配的字幕，询问用户是否使用
+                if (bestMatch) {
+                    setTimeout(() => {
+                        if (confirm(`检测到可能匹配的字幕: ${bestMatch.name}\n是否加载此字幕?`)) {
+                            loadSubtitleContent(bestMatch.content, bestMatch.name);
+                            if (bestMatch.visible === false) {
+                                toggleSubtitleVisibility(false);
+                            }
+
+                            // 保存为当前视频的字幕
+                            saveSubtitleContent(videoId, bestMatch.content, bestMatch.name, bestMatch.visible);
+                            dp.notice(`已加载匹配字幕: ${bestMatch.name}`, 3000);
+                        }
+                    }, 2000);
+                }
+            }
+
+            // 获取文件的基本名称(去除扩展名和常见前缀/后缀)
+            function getBaseName(filename) {
+                if (!filename) return '';
+
+                // 移除文件扩展名
+                let name = filename.split('.').slice(0, -1).join('.');
+                if (!name) name = filename;
+
+                // 移除常见的前缀和后缀
+                name = name.replace(/(\[.*?\])|【.*?】|\(.*?\)|\d{4}[-_]\d{2}[-_]\d{2}|EP\d+|第\d+[集话部]|\d+$/gi, '');
+
+                // 移除多余空格和特殊字符，并转为小写
+                return name.replace(/\s+/g, ' ').trim().toLowerCase();
+            }
+
+            // 计算两个字符串的相似度 (0-1), 使用Levenshtein距离
+            function calculateSimilarity(str1, str2) {
+                if (!str1 || !str2) return 0;
+                if (str1 === str2) return 1;
+
+                // 如果字符串中一个包含另一个，给予较高相似度
+                if (str1.includes(str2)) return 0.9;
+                if (str2.includes(str1)) return 0.9;
+
+                // 计算编辑距离
+                const len1 = str1.length;
+                const len2 = str2.length;
+                const maxDist = Math.max(len1, len2);
+                const distance = levenshteinDistance(str1, str2);
+
+                // 转换为相似度 (0-1)
+                return 1 - distance / maxDist;
+            }
+
+            // Levenshtein距离算法
+            function levenshteinDistance(str1, str2) {
+                const len1 = str1.length;
+                const len2 = str2.length;
+
+                // 初始化距离矩阵
+                let matrix = Array(len1 + 1).fill().map(() => Array(len2 + 1).fill(0));
+
+                // 初始化第一列和第一行
+                for (let i = 0; i <= len1; i++) matrix[i][0] = i;
+                for (let j = 0; j <= len2; j++) matrix[0][j] = j;
+
+                // 计算编辑距离
+                for (let i = 1; i <= len1; i++) {
+                    for (let j = 1; j <= len2; j++) {
+                        const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
+                        matrix[i][j] = Math.min(
+                            matrix[i - 1][j] + 1,     // 删除
+                            matrix[i][j - 1] + 1,     // 插入
+                            matrix[i - 1][j - 1] + cost  // 替换或不变
+                        );
+                    }
+                }
+
+                return matrix[len1][len2];
+            }
+
+            // 绑定字幕管理相关事件
+            const clearButton = document.getElementById('clear-subtitle-mappings');
+            if (clearButton) {
+                clearButton.addEventListener('click', () => {
+                    if (confirm('确定要清除所有保存的字幕映射吗？')) {
+                        subtitleMappings = {};
+                        localStorage.setItem('subtitleMappings', JSON.stringify({}));
+                        loadSubtitleMappingsList();
+                        dp.notice('已清除所有字幕映射', 3000);
+                    }
+                });
+            }
+
+            sourceTabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    // 移除所有标签的active类
+                    sourceTabs.forEach(t => t.classList.remove('active'));
+                    // 添加当前标签的active类
+                    tab.classList.add('active');
+
+                    // 隐藏所有内容区域
+                    const sourceSections = document.querySelectorAll('.source-section');
+                    sourceSections.forEach(section => section.classList.remove('active'));
+
+                    // 显示对应内容区域
+                    const tabId = tab.getAttribute('data-tab') + '-section';
+                    const targetSection = document.getElementById(tabId);
+                    if (targetSection) {
+                        targetSection.classList.add('active');
+
+                        // 如果切换到字幕管理标签，加载字幕映射列表
+                        if (tab.getAttribute('data-tab') === 'subtitles') {
+                            loadSubtitleMappingsList();
+                        }
+                    }
+                });
+            });
+
+            // 加载字幕映射列表
+            function loadSubtitleMappingsList() {
+                const mappingsList = document.getElementById('subtitle-mappings-list');
+                if (!mappingsList) return;
+
+                // 清空列表
+                mappingsList.innerHTML = '';
+
+                // 检查是否有映射
+                const mappings = Object.entries(subtitleMappings);
+                if (mappings.length === 0) {
+                    mappingsList.innerHTML = '<div class="empty-message">没有保存的字幕映射</div>';
+                    return;
+                }
+
+                // 按时间戳排序
+                mappings.sort((a, b) => (b[1].timestamp || 0) - (a[1].timestamp || 0));
+
+                // 添加每个映射项
+                mappings.forEach(([vid, subtitle]) => {
+                    const videoName = decodeURIComponent(vid);
+                    const item = document.createElement('div');
+                    item.className = 'subtitle-mapping-item';
+
+                    const date = subtitle.timestamp ? new Date(subtitle.timestamp).toLocaleString() : '未知时间';
+
+                    item.innerHTML = `
+                        <div class="mapping-info">
+                            <div class="mapping-video-name">${videoName}</div>
+                            <div class="mapping-subtitle-name">字幕: ${subtitle.name || '未命名'}</div>
+                            <div class="mapping-date">添加时间: ${date}</div>
+                        </div>
+                        <button class="mapping-delete" data-id="${vid}">删除</button>
+                    `;
+
+                    // 添加删除按钮事件
+                    const deleteBtn = item.querySelector('.mapping-delete');
+                    deleteBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const id = deleteBtn.getAttribute('data-id');
+                        if (confirm(`确定要删除"${videoName}"的字幕映射吗？`)) {
+                            delete subtitleMappings[id];
+                            localStorage.setItem('subtitleMappings', JSON.stringify(subtitleMappings));
+                            item.remove();
+                            if (Object.keys(subtitleMappings).length === 0) {
+                                mappingsList.innerHTML = '<div class="empty-message">没有保存的字幕映射</div>';
+                            }
+                            dp.notice(`已删除"${videoName}"的字幕映射`, 3000);
+                        }
+                    });
+
+                    mappingsList.appendChild(item);
+                });
+            }
+
+
+            // 添加API支持检测
+            // 检查浏览器支持
+            const isFileSystemAccessSupported = 'showOpenFilePicker' in window;
+
+            // 仅输出日志，不尝试使用API
+            if (isFileSystemAccessSupported) {
+                console.log('本浏览器支持文件系统访问API');
+                // 如果希望用户手动确认是否使用此功能，可以添加一个选项按钮
+            } else {
+                console.log('本浏览器不支持文件系统访问API');
+            }
+
+            // 检查是否有保存的最近视频
+            loadRecentVideos();
+
+            // 如果没有视频源，则显示选择面板
+            if (!videoPath || videoPath === './第八章event.mp4') {
+                setTimeout(() => {
+                    sourcePanel.style.display = 'flex';
+                }, 500);
+            } else {
+                sourcePanel.style.display = 'none';
+            }
+
+
+            // 文件重命名功能
+            const sourceFilenameInput = document.getElementById('source-filename');
+            const targetFilenameInput = document.getElementById('target-filename');
+            const executeRenameBtn = document.getElementById('execute-rename');
+            const keepPrefixCheckbox = document.getElementById('keepPrefix');
+
+            // 源文件名输入事件处理
+            if (sourceFilenameInput) {
+                sourceFilenameInput.addEventListener('input', function () {
+                    const targetPath = updateTargetFilename(this.value, keepPrefixCheckbox.checked);
+
+                    copyToClipboard(targetPath); // 复制源文件名到剪贴板
+                });
+            }
+            // 更现代的剪贴板API方法
+            function copyToClipboard(text) {
+                // 检查浏览器是否支持Clipboard API
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text)
+                        .then(() => {
+                            showCopyNotification();
+                        })
+                        .catch(err => {
+                            console.error('复制失败:', err);
+                        });
+                } else {
+                    // 回退到旧方法
+                    const textarea = document.createElement('textarea');
+                    textarea.value = text;
+                    textarea.setAttribute('readonly', '');
+                    textarea.style.position = 'absolute';
+                    textarea.style.left = '-9999px';
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    showCopyNotification();
+                }
+            }
+            // 显示复制成功提示
+            function showCopyNotification() {
+                // 检查是否已有通知元素
+                let notification = document.getElementById('copyNotification');
+
+                if (!notification) {
+                    // 创建通知元素
+                    notification = document.createElement('div');
+                    notification.id = 'copyNotification';
+                    notification.style.position = 'fixed';
+                    notification.style.bottom = '20px';
+                    notification.style.right = '20px';
+                    notification.style.padding = '10px 15px';
+                    notification.style.backgroundColor = '#4CAF50';
+                    notification.style.color = 'white';
+                    notification.style.borderRadius = '4px';
+                    notification.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
+                    notification.style.opacity = '0';
+                    // index 1000
+                    notification.style.zIndex = '10000';
+                    notification.style.transition = 'opacity 0.3s';
+                    notification.textContent = '已复制到剪贴板';
+                    document.body.appendChild(notification);
+                }
+
+                // 显示通知
+                notification.style.opacity = '1';
+
+                // 3秒后隐藏通知
+                setTimeout(() => {
+                    notification.style.opacity = '0';
+                }, 3000);
+            }
+            // 更新目标文件名
+            function updateTargetFilename(sourceName, keepPrefix) {
+                if (!sourceName) {
+                    targetFilenameInput.value = '';
+                    return;
+                }
+
+                // 提取文件名，去除扩展名
+                const fileName = sourceName.trim();
+                let baseName = fileName.replace(/\.[^/.]+$/, '');
+
+                // 根据选项决定是否移除开头的序号和点
+                if (!keepPrefix) {
+                    baseName = baseName.replace(/^\d+[-\s]*\.\s*/, '');
+                }
+                // 构建目标路径
+                const targetPath = `D:\\download\\${baseName}.ts`;
+                targetFilenameInput.value = targetPath;
+                return targetPath;
+            }
+
+            // 执行重命名按钮事件
+            if (executeRenameBtn) {
+                executeRenameBtn.addEventListener('click', function () {
+                    const sourceName = sourceFilenameInput.value.trim();
+                    const targetPath = targetFilenameInput.value.trim();
+
+                    if (!sourceName || !targetPath) {
+                        showRenameResult(false, '源文件名和目标路径不能为空');
+                        return;
+                    }
+
+                    // 这里可以添加实际的重命名API调用
+                    // 例如调用一个后端API或者使用File System API
+
+                    // 模拟重命名成功
+                    showRenameResult(true, `已成功将 "${sourceName}" 重命名为 "${targetPath}"`);
+
+                    // 清空输入框
+                    sourceFilenameInput.value = '';
+                    targetFilenameInput.value = '';
+                });
+            }
+
+            // 显示重命名结果
+            function showRenameResult(success, message) {
+                // 移除之前的结果消息
+                const oldResult = document.querySelector('.rename-result');
+                if (oldResult) {
+                    oldResult.remove();
+                }
+
+                // 创建新的结果消息
+                const resultDiv = document.createElement('div');
+                resultDiv.className = `rename-result ${success ? 'rename-success' : 'rename-error'}`;
+                resultDiv.textContent = message;
+
+                // 添加到重命名面板
+                const renameSection = document.getElementById('rename-section');
+                if (renameSection) {
+                    renameSection.appendChild(resultDiv);
+
+                    // 3秒后自动移除
+                    setTimeout(() => {
+                        resultDiv.style.opacity = '0';
+                        resultDiv.style.transition = 'opacity 0.5s';
+                        setTimeout(() => resultDiv.remove(), 500);
+                    }, 3000);
+                }
+            }
+        });
+
+
+
+
+    </script>
+</body>
+
+</html>
