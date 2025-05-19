@@ -1,0 +1,32 @@
+package utils
+
+import (
+    "os"
+    "path/filepath"
+)
+
+// CleanupTempFiles removes temporary files from the specified directory.
+func CleanupTempFiles(dir string) error {
+    return os.RemoveAll(dir)
+}
+
+// CheckFFmpeg checks if FFmpeg is installed by trying to execute it.
+func CheckFFmpeg() bool {
+    _, err := exec.LookPath("ffmpeg")
+    return err == nil
+}
+
+// Info logs informational messages.
+func Info(format string, args ...interface{}) {
+    log.Printf(format, args...)
+}
+
+// Error logs error messages.
+func Error(format string, args ...interface{}) {
+    log.Printf("ERROR: "+format, args...)
+}
+
+// Warn logs warning messages.
+func Warn(format string, args ...interface{}) {
+    log.Printf("WARNING: "+format, args...)
+}

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>音频转文字服务</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><i class="bi bi-soundwave"></i> 音频转文字</h1>
+            <p class="tagline">上传音频或视频，快速获取文字内容</p>
+        </header>
+        
+        <div class="card upload-card">
+            <div id="drop-area">
+                <form class="upload-form">
+                    <input type="file" id="fileInput" accept=".mp3,.wav,.mp4,.mov,.avi,.mkv,.flv,.wmv,.m4a" hidden>
+                    <label for="fileInput" class="upload-button">
+                        <i class="bi bi-cloud-arrow-up"></i>
+                        <span>选择文件或拖放至此处</span>
+                    </label>
+                    <p class="upload-hint">支持的格式：MP3、WAV、MP4、MOV等</p>
+                </form>
+            </div>
+            <div id="file-info" class="hidden">
+                <div class="file-details">
+                    <i class="bi bi-file-earmark-music"></i>
+                    <p id="file-name"></p>
+                </div>
+                <div class="action-buttons">
+                    <button id="start-upload" class="action-button">
+                        <i class="bi bi-play-fill"></i> 开始转换
+                    </button>
+                    <button id="cancel-upload" class="cancel-button">
+                        <i class="bi bi-x"></i> 取消
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div id="progress-container" class="card hidden">
+            <h3><i class="bi bi-gear-wide-connected"></i> 处理中...</h3>
+            <div class="progress-bar">
+                <div id="progress-bar-inner"></div>
+            </div>
+            <p id="status-message">正在上传文件...</p>
+            <small class="progress-note">处理大文件可能需要几分钟，请耐心等待</small>
+        </div>
+        
+        <div id="result-container" class="card hidden">
+            <div class="result-header">
+                <h2><i class="bi bi-text-paragraph"></i> 转换结果</h2>
+                <button id="copy-all" class="action-button">
+                    <i class="bi bi-clipboard"></i> 复制全文
+                </button>
+            </div>
+            <div id="segments-container" class="segments-container">
+                <!-- 结果将在这里动态生成 -->
+            </div>
+        </div>
+        
+        <div id="error-container" class="card hidden">
+            <h3><i class="bi bi-exclamation-triangle"></i> 处理失败</h3>
+            <p id="error-message"></p>
+            <button id="try-again" class="action-button">
+                <i class="bi bi-arrow-clockwise"></i> 重试
+            </button>
+        </div>
+        
+        <footer>
+            <p>&copy; 2025 音频转文字服务 | 文件处理完成后将自动清理</p>
+        </footer>
+    </div>
+    
+    <!-- 小贴士提示 -->
+    <div id="toast" class="toast hidden">
+        <span id="toast-message"></span>
+    </div>
+    
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

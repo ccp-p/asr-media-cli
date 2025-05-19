@@ -1,0 +1,77 @@
+package controller
+
+import (
+    "encoding/json"
+    "io/ioutil"
+    "net/http"
+    "os"
+    "path/filepath"
+
+    "github.com/ccp-p/asr-media-cli/audio-processor/pkg/audio"
+    "github.com/ccp-p/asr-media-cli/audio-processor/pkg/utils"
+)
+
+type ProcessorController struct {
+    // Add necessary fields for the controller
+}
+
+func NewProcessorController() (*ProcessorController, error) {
+    // Initialize and return a new ProcessorController
+    return &ProcessorController{}, nil
+}
+
+func (c *ProcessorController) ProcessMedia(filePath string) (string, error) {
+    // Implement media processing logic here
+    // For example, call audio processing functions and return the result as a string
+    result, err := audio.ProcessFile(filePath)
+    if err != nil {
+        return "", err
+    }
+    return result, nil
+}
+
+func (c *ProcessorController) Cleanup(tempFilePath string) {
+    // Clean up temporary files to prevent memory overflow
+    if err := os.Remove(tempFilePath); err != nil {
+        utils.Warn("Failed to remove temporary file %s: %v", tempFilePath, err)
+    }
+}
+
+func (c *ProcessorController) UploadAndProcessHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost {
+        http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
+        return
+    }
+
+    file, _, err := r.FormFile("mediaFile")
+    if err != nil {
+        http.Error(w, "Failed to get uploaded file: "+err.Error(), http.StatusBadRequest)
+        return
+    }
+    defer file.Close()
+
+    tempFilePath := filepath.Join(os.TempDir(), "uploaded_file")
+    tempFile, err := os.Create(tempFilePath)
+    if err != nil {
+        http.Error(w, "Failed to create temporary file: "+err.Error(), http.StatusInternalServerError)
+        return
+    }
+    defer tempFile.Close()
+
+    if _, err := io.Copy(tempFile, file); err != nil {
+        http.Error(w, "Failed to save uploaded file: "+err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    result, err := c.ProcessMedia(tempFilePath)
+    if err != nil {
+        http.Error(w, "Processing failed: "+err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    c.Cleanup(tempFilePath)
+
+    response := map[string]string{"result": result}
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(response)
+}
