@@ -170,7 +170,7 @@
             container: dPlayerNode,
             video: {
                 quality: quality,
-                defaultQuality: 1,
+                defaultQuality: 0,
                 customType: {
                     hls: function (video, player) {
                         if (player.plugins.hls) {
