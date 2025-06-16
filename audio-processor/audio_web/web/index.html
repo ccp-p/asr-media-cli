@@ -9,78 +9,144 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1><i class="bi bi-soundwave"></i> 音频转文字</h1>
-            <p class="tagline">上传音频或视频，快速获取文字内容</p>
-        </header>
-        
-        <div class="card upload-card">
-            <div id="drop-area">
-                <form class="upload-form">
-                    <input type="file" id="fileInput" accept=".mp3,.wav,.mp4,.mov,.avi,.mkv,.flv,.wmv,.m4a" hidden>
-                    <label for="fileInput" class="upload-button">
-                        <i class="bi bi-cloud-arrow-up"></i>
-                        <span>选择文件或拖放至此处</span>
-                    </label>
-                    <p class="upload-hint">支持的格式：MP3、WAV、MP4、MOV等</p>
-                </form>
-            </div>
-            <div id="file-info" class="hidden">
-                <div class="file-details">
-                    <i class="bi bi-file-earmark-music"></i>
-                    <p id="file-name"></p>
+    <div id="app" v-cloak>
+        <div class="container">
+            <header>
+                <h1><i class="bi bi-soundwave"></i> 音频转文字</h1>
+                <p class="tagline">上传音频或视频，快速获取文字内容</p>
+            </header>
+            
+            <!-- 上传卡片 -->
+            <div class="card upload-card" v-show="currentView === 'upload'">
+                <div id="drop-area" 
+                     :class="{ highlight: isDragging }"
+                     @dragenter.prevent="isDragging = true" 
+                     @dragover.prevent="isDragging = true"
+                     @dragleave.prevent="isDragging = false"
+                     @drop.prevent="handleDrop">
+                    <form class="upload-form">
+                        <input type="file" id="fileInput" 
+                               accept=".mp3,.wav,.mp4,.mov,.avi,.mkv,.flv,.wmv,.m4a" 
+                               hidden
+                               @change="handleFileSelect">
+                        <label for="fileInput" class="upload-button">
+                            <i class="bi bi-cloud-arrow-up"></i>
+                            <span>选择文件或拖放至此处</span>
+                        </label>
+                        <p class="upload-hint">支持的格式：MP3、WAV、MP4、MOV等</p>
+                    </form>
                 </div>
-                <div class="action-buttons">
-                    <button id="start-upload" class="action-button">
-                        <i class="bi bi-play-fill"></i> 开始转换
-                    </button>
-                    <button id="cancel-upload" class="cancel-button">
-                        <i class="bi bi-x"></i> 取消
-                    </button>
+                <div v-if="selectedFile" class="file-info">
+                    <div class="file-details">
+                        <i class="bi bi-file-earmark-music"></i>
+                        <p>{{ formattedFileName }} ({{ formattedFileSize }})</p>
+                    </div>
+                    <div class="action-buttons">
+                        <button @click="startUpload" class="action-button">
+                            <i class="bi bi-play-fill"></i> 开始转换
+                        </button>
+                        <button @click="cancelUpload" class="cancel-button">
+                            <i class="bi bi-x"></i> 取消
+                        </button>
+                    </div>
                 </div>
             </div>
-        </div>
-        
-        <div id="progress-container" class="card hidden">
-            <h3><i class="bi bi-gear-wide-connected"></i> 处理中...</h3>
-            <div class="progress-bar">
-                <div id="progress-bar-inner"></div>
+            
+            <!-- 进度卡片 -->
+            <div class="card" v-show="currentView === 'progress'">
+                <h3><i class="bi bi-gear-wide-connected"></i> 处理中...</h3>
+                <div class="progress-bar">
+                    <div :style="{ width: progressPercentage + '%' }" class="progress-bar-inner"></div>
+                </div>
+                <p>{{ statusMessage }}</p>
+                <small class="progress-note">处理大文件可能需要几分钟，请耐心等待</small>
             </div>
-            <p id="status-message">正在上传文件...</p>
-            <small class="progress-note">处理大文件可能需要几分钟，请耐心等待</small>
-        </div>
-        
-        <div id="result-container" class="card hidden">
-            <div class="result-header">
-                <h2><i class="bi bi-text-paragraph"></i> 转换结果</h2>
-                <button id="copy-all" class="action-button">
-                    <i class="bi bi-clipboard"></i> 复制全文
+            
+            <!-- 结果卡片 -->
+            <div class="card" v-show="currentView === 'result'">
+                <div class="result-header">
+                    <h2><i class="bi bi-text-paragraph"></i> 转换结果</h2>
+                    <div class="result-actions">
+                        <button @click="generateSummary" 
+                                class="action-button secondary-button"
+                                :disabled="!hasTranscriptionContent">
+                            <i class="bi bi-journal-text"></i> 生成摘要
+                        </button>
+                        <button @click="copyAllText" class="action-button">
+                            <i class="bi bi-clipboard"></i> 复制全文
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="segments-container">
+                    <div v-for="(segment, index) in segments" 
+                         :key="index" 
+                         class="text-segment">
+                        {{ segment.text }}
+                    </div>
+                    <div v-if="segments.length === 0" class="text-segment">
+                        未检测到语音内容或文本为空
+                    </div>
+                </div>
+                
+                <!-- 意见总结部分 -->
+                <div v-if="showSummary" class="summary-section">
+                    <div class="summary-header">
+                        <h3><i class="bi bi-lightning"></i> AI摘要</h3>
+                        <button @click="copySummary" class="action-button small-button">
+                            <i class="bi bi-clipboard"></i> 复制
+                        </button>
+                    </div>
+                    
+                    <div class="summary-content">
+                        <div v-if="summaryLoading" class="summary-loading">
+                            <div class="spinner"></div>
+                            <span>{{ summaryLoadingText }}</span>
+                        </div>
+                        <div v-else-if="summaryError" class="error-message">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            <p>获取摘要失败: {{ summaryError }}</p>
+                            <button @click="retrySummary" class="action-button">
+                                <i class="bi bi-arrow-clockwise"></i> 重试
+                            </button>
+                        </div>
+                        <div v-else>{{ summary }}</div>
+                    </div>
+                    
+                    <div class="summary-customize">
+                        <textarea v-model="customPrompt" 
+                                  class="summary-prompt" 
+                                  placeholder="输入自定义提示词，例如：'请提取文本中的关键信息' 或 '请总结这段文字的主要观点'"></textarea>
+                        <button @click="generateCustomSummary" 
+                                class="action-button"
+                                :disabled="!customPrompt.trim()">
+                            <i class="bi bi-magic"></i> 自定义总结
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 错误卡片 -->
+            <div class="card" v-show="currentView === 'error'">
+                <h3><i class="bi bi-exclamation-triangle"></i> 处理失败</h3>
+                <p>{{ errorMessage }}</p>
+                <button @click="tryAgain" class="action-button">
+                    <i class="bi bi-arrow-clockwise"></i> 重试
                 </button>
             </div>
-            <div id="segments-container" class="segments-container">
-                <!-- 结果将在这里动态生成 -->
-            </div>
+            
+            <footer>
+                <p>&copy; 2025 音频转文字服务 </p>
+            </footer>
         </div>
         
-        <div id="error-container" class="card hidden">
-            <h3><i class="bi bi-exclamation-triangle"></i> 处理失败</h3>
-            <p id="error-message"></p>
-            <button id="try-again" class="action-button">
-                <i class="bi bi-arrow-clockwise"></i> 重试
-            </button>
+        <!-- 小贴士提示 -->
+        <div :class="['toast', toastVisible ? 'show' : 'hidden']">
+            <span>{{ toastMessage }}</span>
         </div>
-        
-        <footer>
-            <p>&copy; 2025 音频转文字服务 | 文件处理完成后将自动清理</p>
-        </footer>
-    </div>
-    
-    <!-- 小贴士提示 -->
-    <div id="toast" class="toast hidden">
-        <span id="toast-message"></span>
     </div>
     
     <script src="/static/js/app.js"></script>
