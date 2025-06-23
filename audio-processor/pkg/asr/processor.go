@@ -30,9 +30,10 @@ type ASRService interface {
 
 // NewASRProcessor 创建新的ASR处理器
 func NewASRProcessor(config *models.Config) *ASRProcessor {
+	output:=config.MediaFolder
 	return &ASRProcessor{
 		Config:      config,
-		SRTExporter: export.NewSRTExporter(config.OutputFolder),
+		SRTExporter: export.NewSRTExporter(output),
 		JSONExporter: export.NewJSONExporter(config.OutputFolder),
 	}
 }
