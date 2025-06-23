@@ -1,70 +1,187 @@
-const path = require('path')
-const name = '中国移动公益' // page title
-function resolve(dir) {
-  return path.join(__dirname, dir)
-}
-module.exports = {
-  publicPath: './',
-  outputDir: 'dist',
-  assetsDir: 'static',
-  productionSourceMap: false,
-  //关闭eslint
-    lintOnSave: false,
-  devServer: {
-    // host:'192.168.124.49',
-    // port:8080,
-    proxy: {
-      "/": {
-        // target: "https://gm-test.cmicvip.cn",
-        target: "http://10.3.99.90:18080",
-        changeOrigin: true,
-        pathRewrite: {
-          '^/': ''
+<script>
+    // 配置对象
+const config = {
+    $quark: {
+        api: {
+            ua: {
+                downloadLink: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) quark-cloud-drive/2.5.20 Chrome/100.0.4896.160 Electron/18.3.5.4-b478491100 Safari/537.36 Channel/pckk_other_ch"
+            },
+            getLink: "https://drive.quark.cn/1/clouddrive/file/download?pr=ucpro&fr=pc"
+        },
+        mount: {
+            home: ".btn-operate .btn-main",
+            share: ".share-btns"
+        },
+        dom: {
+            enhance: `+<br/>此方式下载不会被 IDM 捕获下载链接`,
+            normal: `+<br/>此方式下载有可能会被 IDM 捕获下载链接`
         }
-      },
     }
-  },
-  // rules:[
-  //   {
-  //     test: /\.scss$/,
-  //     loaders: ["style", "css", "sass"]
-  //   }
-  // ]
-  configureWebpack: {
-    name: name,
-
-  },
-  chainWebpack(config) {
-    config.module
-      .rule('svg')
-      .exclude.add(resolve('src/icons'))
-      .end()
-    config.module
-      .rule('icons')
-      .test(/\.svg$/)
-      .include.add(resolve('src/icons'))
-      .end()
-      .use('svg-sprite-loader')
-      .loader('svg-sprite-loader')
-      .options({
-        symbolId: 'icon-[name]'
-      })
-      .end()
-    // config.rules=[
-    //   {
-    //     test: /\.s[ac]ss$/i,
-    //     use: [
-    //       // Creates `style` nodes from JS strings
-    //       "style-loader",
-    //       // Translates CSS into CommonJS
-    //       "css-loader",
-    //       // Compiles Sass to CSS
-    //       "sass-loader",
-    //     ],
-    //   },
-    // ]
-    // .test(/\.scss$/)
-    // .loader("style", "css", "sass")
-    // .end()
-  }
 };
+
+// 模拟 base.post 函数
+const base = {
+    async post(url, data, headers) {
+        console.log('🚀 发送请求到:', url);
+        console.log('📤 请求数据:', data);
+        console.log('📋 请求头:', headers);
+        
+        // 模拟网络延迟
+        await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
+        
+        // 模拟返回数据
+        const mockResponse = {
+            status: 200,
+            data: {
+                code: 0,
+                message: "success",
+                data: data.fids.map(fid => ({
+                    fid: fid,
+                    download_url: `https://drive.quark.cn/download/${fid}?token=mock_token_${Math.random().toString(36).substr(2, 9)}`,
+                    filename: `文件_${fid}.zip`,
+                    size: Math.floor(Math.random() * 1000000) + 1000000, // 1MB-2MB
+                    expire_time: Date.now() + 3600000 // 1小时后过期
+                }))
+            }
+        };
+        
+        // 模拟可能的错误情况
+        if (Math.random() < 0.1) { // 10% 概率返回错误
+            throw new Error('网络请求失败');
+        }
+        
+        return mockResponse;
+    }
+};
+
+/**
+ * 获取夸克云盘文件下载链接
+ * @param {string[]} fids - 文件ID列表
+ * @returns {Promise<Array>} 下载链接列表
+ */
+async function getQuarkDownloadLinks(fids) {
+    try {
+        console.log('📁 开始获取下载链接，文件数量:', fids.length);
+        console.log('📋 文件ID列表:', fids);
+        
+        // 调用 API
+        let res = await base.post(
+            config.$quark.api.getLink, 
+            { "fids": fids }, 
+            { 
+                "content-type": "application/json;charset=utf-8", 
+                "user-agent": config.$quark.api.ua.downloadLink 
+            }
+        );
+        
+        // 检查响应状态
+        if (res.status !== 200) {
+            throw new Error(`HTTP 状态码错误: ${res.status}`);
+        }
+        
+        // 检查业务状态码
+        if (res.data.code !== 0) {
+            throw new Error(`业务错误: ${res.data.message}`);
+        }
+        
+        // 提取下载链接列表
+        const downloadLinks = res.data;
+        
+        // 输出结果
+        console.log('✅ 成功获取下载链接:');
+        console.log('=' * 50);
+        downloadLinks.forEach((item, index) => {
+            console.log(`📎 文件 ${index + 1}:`);
+            console.log(`   FID: ${item.fid}`);
+            console.log(`   文件名: ${item.filename}`);
+            console.log(`   大小: ${(item.size / 1024 / 1024).toFixed(2)} MB`);
+            console.log(`   下载链接: ${item.download_url}`);
+            console.log(`   过期时间: ${new Date(item.expire_time).toLocaleString()}`);
+            console.log('---');
+        });
+        copyToClipboard(downloadLinks.map(item => item.download_url).join('\n'));
+        return downloadLinks;
+        
+    } catch (error) {
+        console.error('❌ 获取下载链接失败:', error.message);
+        return [];
+    }
+}
+
+/**
+ * 批量处理文件ID，支持大量文件分批处理
+ * @param {string[]} fids - 文件ID列表
+ * @param {number} batchSize - 每批处理的文件数量
+ * @returns {Promise<Array>} 所有下载链接列表
+ */
+async function getQuarkDownloadLinksBatch(fids, batchSize = 50) {
+    const allLinks = [];
+    
+    console.log(`🔄 开始批量处理，总文件数: ${fids.length}，每批: ${batchSize}`);
+    
+    for (let i = 0; i < fids.length; i += batchSize) {
+        const batch = fids.slice(i, i + batchSize);
+        const batchNumber = Math.floor(i / batchSize) + 1;
+        const totalBatches = Math.ceil(fids.length / batchSize);
+        
+        console.log(`📦 处理第 ${batchNumber}/${totalBatches} 批，文件 ${i + 1}-${Math.min(i + batchSize, fids.length)}`);
+        
+        try {
+            const links = await getQuarkDownloadLinks(batch);
+            allLinks.push(...links);
+            
+            // 批次间延迟，避免请求过于频繁
+            if (i + batchSize < fids.length) {
+                console.log('⏱️  等待 1 秒后处理下一批...');
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        } catch (error) {
+            console.error(`❌ 第 ${batchNumber} 批处理失败:`, error.message);
+        }
+    }
+    
+    console.log(`🎉 批量处理完成，共获取 ${allLinks.length} 个下载链接`);
+    return allLinks;
+}
+
+// 使用示例
+async function example() {
+    // 示例文件ID列表
+    const testFids = [
+        "file_id_001",
+        "file_id_002", 
+        "file_id_003",
+        "file_id_004",
+        "file_id_005"
+    ];
+    
+    console.log('🎯 开始测试获取下载链接...');
+    
+    // 方式1：直接获取
+    const links1 = await getQuarkDownloadLinks(testFids);
+    console.log('\n📊 方式1结果:', links1.length, '个链接');
+    
+    // 方式2：批量处理（适合大量文件）
+    const manyFids = Array.from({length: 120}, (_, i) => `file_id_${String(i + 1).padStart(3, '0')}`);
+    const links2 = await getQuarkDownloadLinksBatch(manyFids, 30);
+    console.log('\n📊 方式2结果:', links2.length, '个链接');
+}
+
+      function copyToClipboard  (text) {
+            console.log("复制到剪贴板:", text);
+            const el = document.createElement('textarea');
+            el.value = text;
+            document.body.appendChild(el);
+            el.select();
+            document.execCommand('copy');
+            document.body.removeChild(el);
+        };
+// 将函数添加到您的现有代码中
+$(document).ready(function() {
+    // 您的现有代码...
+    
+ 
+    
+
+});
+</script>
