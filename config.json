@@ -1,17 +1,17 @@
 {
-    "media_folder": "./media",
-    "output_folder": "./output",
+    "media_folder": "D://download//",
+    "output_folder": "D://download//dest",
     "max_retries": 3,
     "max_workers": 4,
-    "use_jianying_first": true,
-    "use_kuaishou": true,
+    "use_jianying_first": false,
+    "use_kuaishou": false,
     "use_bcut": true,
     "format_text": true,
     "include_timestamps": true,
     "show_progress": true,
     "process_video": true,
     "extract_audio_only": false,
-    "watch_mode": false,
+    "watch_mode": true,
     "segment_length": 30,
     "max_segment_length": 2000,
     "min_segment_length": 10,
@@ -19,5 +19,6 @@
     "log_level": "INFO",
     "log_file": "./output/audio_processing.log",
     "watch": true,
-    "ExprotSRT":true
+    "ExprotSRT":true,
+    "export_md":true
 }
